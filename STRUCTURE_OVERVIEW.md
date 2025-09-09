@@ -17,9 +17,7 @@ This document provides an overview of the complete benchmark structure created f
 
 ### 3. Model Framework (`benchmark/models/`)
 - **base_model.py**: Abstract base class defining standard model interface
-- **traditional.py**: Traditional ML models (RF, SVM, ARIMA, etc.)
 - **deep_learning.py**: Neural network models (LSTM, Transformer, CNN)
-- **physiological.py**: Physiological and hybrid models (PK/PD, PINN)
 - **__init__.py**: Model module interface
 
 ### 4. Evaluation System (`benchmark/evaluation/`)
@@ -32,8 +30,6 @@ This document provides an overview of the complete benchmark structure created f
 - **config_manager.py**: Configuration loading and validation utilities
 - **default.yaml**: Default configuration template
 - **example_experiment.yaml**: Complete example configuration
-- **random_forest_example.yaml**: Traditional ML example
-- **transformer_example.yaml**: Deep learning example
 
 ### 6. Experiment Management (`benchmark/experiments/`)
 - **runner.py**: Main experiment execution engine

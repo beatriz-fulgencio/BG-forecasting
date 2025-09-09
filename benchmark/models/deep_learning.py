@@ -3,10 +3,10 @@ Deep learning models for blood glucose forecasting.
 
 Implementations of neural network approaches including:
 - LSTM/GRU networks
-- Transformer models
-- CNN-based models
-- Attention mechanisms
-- Hybrid architectures
+- Transformer models TODO
+- CNN-based models TODO
+- Attention mechanisms TODO
+- Hybrid architectures TODO
 """
 
 # TODO: Implement deep learning models following base interface

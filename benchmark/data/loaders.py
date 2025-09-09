@@ -5,11 +5,10 @@ This module provides standardized data loading functions for different
 blood glucose datasets commonly used in research, ensuring consistent
 data format and preprocessing across all benchmark experiments.
 
-Supported datasets:
+Supported dataset:
 - OhioT1DM Dataset
-- REPLACE-BG Dataset  
-- Tidepool Dataset
-- Custom CSV formats
+
+For other datasets, please refer to the documentation for details on loading and preprocessing steps. 
 """
 
 # TODO: Implement standardized data loaders for common BG datasets
