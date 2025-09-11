@@ -16,8 +16,6 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 import warnings
 import os
 
-from benchmark.data.loaders import OhioT1DMDataLoader
-
 warnings.simplefilter('ignore', Warning)
 
 
@@ -347,33 +345,19 @@ class OhioBGDataPreprocessor:
                 df['hour'] * 60 + df[self.time_column].dt.minute
             )
             
+            #TODO Silvio: check if this is a good idea 
             # Cyclical encoding for time features
             df['hour_sin'] = np.sin(2 * np.pi * df['hour'] / 24)
             df['hour_cos'] = np.cos(2 * np.pi * df['hour'] / 24)
             df['dow_sin'] = np.sin(2 * np.pi * df['day_of_week'] / 7)
             df['dow_cos'] = np.cos(2 * np.pi * df['day_of_week'] / 7)
-        
-        # Glucose-derived features
-        if self.target_column in df.columns:
-            # Glucose rate of change
-            df['glucose_diff'] = df[self.target_column].diff()
-            df['glucose_diff_2'] = df['glucose_diff'].diff()  # Second derivative
             
-            # Rolling statistics
-            for window in [3, 6, 12]:  # 15min, 30min, 1hr windows
-                df[f'glucose_mean_{window}'] = (
-                    df[self.target_column].rolling(window=window, min_periods=1).mean()
-                )
-                df[f'glucose_std_{window}'] = (
-                    df[self.target_column].rolling(window=window, min_periods=1).std()
-                )
-                df[f'glucose_max_{window}'] = (
-                    df[self.target_column].rolling(window=window, min_periods=1).max()
-                )
-                df[f'glucose_min_{window}'] = (
-                    df[self.target_column].rolling(window=window, min_periods=1).min()
-                )
+            #drop non-cyclical columns 
+            df = df.drop(columns=['hour', 'day_of_week', 'is_weekend'], errors='ignore')
         
+        # TODO Silvio: check if this is a good idea -> Glucose-derived features (e.g., trend arrows)
+
+        #TODO: Calculate IOB --------------------------------
         # Insulin features
         insulin_cols = ['bolus', 'basal']
         for col in insulin_cols:
@@ -396,25 +380,8 @@ class OhioBGDataPreprocessor:
                     df['carbs'].rolling(window=window, min_periods=1).sum()
                 )
         
-        # Exercise features
-        if 'exercise_intensity' in df.columns:
-            df['exercise_intensity'] = pd.to_numeric(df['exercise_intensity'], errors='coerce')
-            df['exercise_intensity'] = df['exercise_intensity'].fillna(0)
-            
-            # Exercise in the last hour
-            df['exercise_last_hour'] = (
-                df['exercise_intensity'].rolling(window=12, min_periods=1).max()
-            )
-        
-        # Sleep and work stress binary indicators
-        for col in ['sleep', 'work']:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-                df[f'is_{col}'] = (df[col] > 0).astype(int)
-        
         return df
     
-    #TODO: verify
     def normalize_features(self, 
                           df: pd.DataFrame, 
                           feature_groups: Dict[str, List[str]] = None,
@@ -466,13 +433,11 @@ class OhioBGDataPreprocessor:
         
         return df
     
-    #TODO: verify
     def create_sequences(self, 
                         df: pd.DataFrame,
                         sequence_length: int = 12,
                         prediction_horizon: int = 6,
-                        step_size: int = 1,
-                        target_column: str = None) -> Tuple[np.ndarray, np.ndarray]:
+                        step_size: int = 1) -> Tuple[np.ndarray, np.ndarray]:
         """
         Create sequences for time series forecasting.
         
@@ -481,24 +446,17 @@ class OhioBGDataPreprocessor:
             sequence_length: Length of input sequences
             prediction_horizon: Number of steps to predict ahead
             step_size: Step size for sliding window
-            target_column: Target column name
             
         Returns:
             Tuple of (X, y) arrays for training
         """
-        if target_column is None:
-            target_column = self.target_column
-        
-        # Ensure target column exists and is numeric
-        if target_column not in df.columns:
-            raise ValueError(f"Target column '{target_column}' not found in DataFrame")
         
         df = df.copy()
-        df[target_column] = pd.to_numeric(df[target_column], errors='coerce')
-        
+        df[self.target_column] = pd.to_numeric(df[self.target_column], errors='coerce')
+
         # Drop rows with NaN in target column
-        df = df.dropna(subset=[target_column])
-        
+        df = df.dropna(subset=[self.target_column])
+
         if len(df) < sequence_length + prediction_horizon:
             raise ValueError("DataFrame too short for specified sequence parameters")
         
@@ -506,9 +464,9 @@ class OhioBGDataPreprocessor:
         feature_columns = df.select_dtypes(include=[np.number]).columns.tolist()
         
         # Remove target column from features to avoid data leakage
-        if target_column in feature_columns:
-            feature_columns.remove(target_column)
-        
+        if self.target_column in feature_columns:
+            feature_columns.remove(self.target_column)
+
         X, y = [], []
         
         for i in range(0, len(df) - sequence_length - prediction_horizon + 1, step_size):
@@ -517,10 +475,10 @@ class OhioBGDataPreprocessor:
             
             # Target sequence (can be single value or multiple)
             if prediction_horizon == 1:
-                y_seq = df.iloc[i + sequence_length][target_column]
+                y_seq = df.iloc[i + sequence_length][self.target_column]
             else:
-                y_seq = df.iloc[i + sequence_length:i + sequence_length + prediction_horizon][target_column].values
-            
+                y_seq = df.iloc[i + sequence_length:i + sequence_length + prediction_horizon][self.target_column].values
+
             # Check for NaN values
             if not (np.isnan(x_seq).any() or np.isnan(y_seq).any()):
                 X.append(x_seq)
