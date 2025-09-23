@@ -8,7 +8,7 @@ experiment:
   date: "2024-01-01"
 
 data:
-  dataset: "ohiot1dm"  # Options: ohiot1dm, replace_bg, tidepool, custom
+  dataset: "ohiot1dm"  # Options: ohiot1dm, custom
   subjects: "all"      # "all" or list of subject IDs
   split_strategy: "temporal"  # temporal, random, subject_wise
   train_ratio: 0.7

@@ -5,6 +5,8 @@ This module implements domain-specific metrics including:
 - Mean Absolute Error (MAE)
 - Root Mean Square Error (RMSE)
 - Mean Absolute Percentage Error (MAPE)
+
+TODO: 
 - Clarke Error Grid Analysis (EGA)
 - Parkes Error Grid Analysis (PEGA)
 - Time in Range (TIR) metrics

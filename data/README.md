@@ -8,8 +8,6 @@ This directory is intended for storing blood glucose datasets used in benchmark 
 data/
 ├── raw/                    # Original, unprocessed datasets
 │   ├── ohiot1dm/          # Ohio T1DM Dataset
-│   ├── replace_bg/        # REPLACE-BG Dataset
-│   ├── tidepool/          # Tidepool Dataset
 │   └── custom/            # Custom datasets
 ├── processed/             # Preprocessed and cleaned datasets
 └── metadata/              # Dataset descriptions and schemas
@@ -22,18 +20,6 @@ data/
 - **Source**: Ohio University
 - **Format**: CSV files with CGM, insulin, meal, and activity data
 - **Subjects**: Multiple patients with different data availability
-
-### REPLACE-BG Dataset
-- **Description**: Multi-center clinical trial data
-- **Source**: Clinical trials
-- **Format**: Structured clinical data
-- **Features**: CGM, SMBG, insulin, meals, demographics
-
-### Tidepool Dataset
-- **Description**: Real-world diabetes management data
-- **Source**: Tidepool platform
-- **Format**: JSON/CSV with device data
-- **Features**: CGM, insulin pumps, blood glucose meters
 
 ### Custom Datasets
 - **Description**: User-provided datasets

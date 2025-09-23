@@ -4,24 +4,24 @@
 experiment:
   name: "default_experiment"
   description: "Default configuration template"
-  author: "Your Name"
-  date: "YYYY-MM-DD"
+  author: "Beatriz Fulgencio"
+  date: "2025-09-09"
 
 data:
   dataset: "ohiot1dm"
   subjects: "all"
-  split_strategy: "temporal"
-  train_ratio: 0.7
-  val_ratio: 0.15
-  test_ratio: 0.15
-  
-preprocessing:
-  imputation_method: "linear"
+  split_strategy: "temporal" # Temporal split for time series data
+  train_ratio: 0.8
+  val_ratio: 0.20
+  test_ratio: 1.0 # 100% of the test data for testing
+
+preprocessing: #TODO
+  imputation_method: "linear" # Linear interpolation for missing values 
   outlier_threshold: 3.0
   normalization: "standardize"
   window_size: 12
-  prediction_horizon: 6
-  sampling_rate: 5
+  prediction_horizon: 6 # 6 time steps (30 minutes)
+  sampling_rate: 5 # 5 minutes
 
 model:
   type: "lstm"
