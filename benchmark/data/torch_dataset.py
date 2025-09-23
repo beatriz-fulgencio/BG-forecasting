@@ -147,7 +147,7 @@ class OhioDataset(Dataset):
         """
         valid_sequences = []
         total_len = self.data.shape[0]
-        required_length = self.sequence_length + self.prediction_horizon - 1 # For multi-step prediction
+        required_length = self.sequence_length + self.prediction_horizon  # Full sequence + full target
         
         def check_contiguous_valid(start_idx: int) -> List[Tuple[int, int]]:
             """Check how many valid sequences we can extract starting from start_idx."""
@@ -158,11 +158,11 @@ class OhioDataset(Dataset):
                 if np.any(np.isnan(self.data[end_idx, :])):
                     break
                 
-                # Check if we can create a full sequence
+                # Check if we can create a full sequence with full target
                 if end_idx - start_idx + 1 >= required_length:
                     # We can create a sequence ending at this point
                     seq_start = end_idx - required_length + 1
-                    target_idx = end_idx - self.prediction_horizon + 1
+                    target_idx = seq_start  # Target starts after sequence
                     sequences.append((seq_start, target_idx))
                 
                 end_idx += 1
@@ -243,13 +243,25 @@ class OhioDataset(Dataset):
         
         if self.prediction_horizon == 1:
             # Single-step prediction
-            target_value = self.data[target_idx + self.sequence_length - 1, target_col_idx]
-            return torch.tensor(target_value)
+            target_value = self.data[target_idx + self.sequence_length, target_col_idx]
+            return torch.tensor([target_value])  # Keep as 1D tensor for consistency
         else:
             # Multi-step prediction
-            target_start = target_idx + self.sequence_length - 1
+            target_start = target_idx + self.sequence_length
             target_end = target_start + self.prediction_horizon
+            
+            # Ensure we don't exceed data bounds
+            if target_end > self.data.shape[0]:
+                target_end = self.data.shape[0]
+                
             target_sequence = self.data[target_start:target_end, target_col_idx]
+            
+            # Ensure consistent shape even if we're at the end of data
+            if len(target_sequence) < self.prediction_horizon:
+                # Pad with the last available value
+                padding = np.full(self.prediction_horizon - len(target_sequence), target_sequence[-1])
+                target_sequence = np.concatenate([target_sequence, padding])
+                
             return torch.from_numpy(target_sequence)
 
 def prepare_patient_datasets(train_df: pd.DataFrame, 

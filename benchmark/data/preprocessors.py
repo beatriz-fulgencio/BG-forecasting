@@ -337,27 +337,17 @@ class OhioBGDataPreprocessor:
         # Time-based features
         if self.time_column in df.columns:
             df['hour'] = df[self.time_column].dt.hour
-            df['day_of_week'] = df[self.time_column].dt.dayofweek
-            df['is_weekend'] = (df['day_of_week'] >= 5).astype(int)
             
-            # Time since midnight
-            df['time_since_midnight'] = (
-                df['hour'] * 60 + df[self.time_column].dt.minute
-            )
             
-            #TODO Silvio: check if this is a good idea 
             # Cyclical encoding for time features
             df['hour_sin'] = np.sin(2 * np.pi * df['hour'] / 24)
             df['hour_cos'] = np.cos(2 * np.pi * df['hour'] / 24)
-            df['dow_sin'] = np.sin(2 * np.pi * df['day_of_week'] / 7)
-            df['dow_cos'] = np.cos(2 * np.pi * df['day_of_week'] / 7)
             
             #drop non-cyclical columns 
-            df = df.drop(columns=['hour', 'day_of_week', 'is_weekend'], errors='ignore')
+            df = df.drop(columns=['hour'], errors='ignore')
         
-        # TODO Silvio: check if this is a good idea -> Glucose-derived features (e.g., trend arrows)
 
-        #TODO: Calculate IOB --------------------------------
+        #TODO: Calculate IOB -------------------------------- 
         # Insulin features
         insulin_cols = ['bolus', 'basal']
         for col in insulin_cols:
