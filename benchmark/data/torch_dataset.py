@@ -177,7 +177,7 @@ class OhioDataset(Dataset):
         # Apply standardization
         for i in range(self.data.shape[1]):
             if self.std[i] > 0:  # Avoid division by zero
-                self.data[:, i] = (self.data[:, i] - self.mean[i]) / self.std[i]
+                self.data[:, i] = (self.data[:, i] - self.mean[i]) / self.std[i] # using z-score standardization
 
     def _validate_data(self):
         """Ensure no NaN values in the final sequences."""

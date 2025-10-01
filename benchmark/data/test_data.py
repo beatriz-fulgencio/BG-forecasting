@@ -95,21 +95,6 @@ def example_single_patient_training():
     print(f"PyTorch train dataset: {len(train_dataset)} sequences")
     print(f"PyTorch test dataset: {len(test_dataset)} sequences")
     
-    # Step 3: Create DataLoaders
-    train_loader = DataLoader(
-        train_dataset, 
-        batch_size=32, 
-        shuffle=True,
-        num_workers=0  # Set to 0 for debugging, increase for performance
-    )
-    
-    test_loader = DataLoader(
-        test_dataset,
-        batch_size=32,
-        shuffle=False,
-        num_workers=0
-    )
-    
     print("\n✓ Single patient dataset ready for training!")
 
 

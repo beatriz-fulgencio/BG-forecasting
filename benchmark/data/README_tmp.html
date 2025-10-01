@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>README.md</title>
+    <meta http-equiv="Content-type" content="text/html;charset=UTF-8">
+    
+<style>
+/* https://github.com/microsoft/vscode/blob/master/extensions/markdown-language-features/media/markdown.css */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+body {
+	font-family: var(--vscode-markdown-font-family, -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif);
+	font-size: var(--vscode-markdown-font-size, 14px);
+	padding: 0 26px;
+	line-height: var(--vscode-markdown-line-height, 22px);
+	word-wrap: break-word;
+}
+
+html,footer,header{
+	font-family: var(--vscode-markdown-font-family, -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif);
+	font-size: var(--vscode-markdown-font-size, 14px);
+}
+
+#code-csp-warning {
+	position: fixed;
+	top: 0;
+	right: 0;
+	color: white;
+	margin: 16px;
+	text-align: center;
+	font-size: 12px;
+	font-family: sans-serif;
+	background-color:#444444;
+	cursor: pointer;
+	padding: 6px;
+	box-shadow: 1px 1px 1px rgba(0,0,0,.25);
+}
+
+#code-csp-warning:hover {
+	text-decoration: none;
+	background-color:#007acc;
+	box-shadow: 2px 2px 2px rgba(0,0,0,.25);
+}
+
+body.scrollBeyondLastLine {
+	margin-bottom: calc(100vh - 22px);
+}
+
+body.showEditorSelection .code-line {
+	position: relative;
+}
+
+body.showEditorSelection .code-active-line:before,
+body.showEditorSelection .code-line:hover:before {
+	content: "";
+	display: block;
+	position: absolute;
+	top: 0;
+	left: -12px;
+	height: 100%;
+}
+
+body.showEditorSelection li.code-active-line:before,
+body.showEditorSelection li.code-line:hover:before {
+	left: -30px;
+}
+
+.vscode-light.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.15);
+}
+
+.vscode-light.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.40);
+}
+
+.vscode-light.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-dark.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.4);
+}
+
+.vscode-dark.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.60);
+}
+
+.vscode-dark.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-high-contrast.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 160, 0, 0.7);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 160, 0, 1);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+img {
+	max-width: 100%;
+	max-height: 100%;
+}
+
+a {
+	text-decoration: none;
+}
+
+a:hover {
+	text-decoration: underline;
+}
+
+a:focus,
+input:focus,
+select:focus,
+textarea:focus {
+	outline: 1px solid -webkit-focus-ring-color;
+	outline-offset: -1px;
+}
+
+hr {
+	border: 0;
+	height: 2px;
+	border-bottom: 2px solid;
+}
+
+h1 {
+	padding-bottom: 0.3em;
+	line-height: 1.2;
+	border-bottom-width: 1px;
+	border-bottom-style: solid;
+}
+
+h1, h2, h3 {
+	font-weight: normal;
+}
+
+table {
+	border-collapse: collapse;
+}
+
+table > thead > tr > th {
+	text-align: left;
+	border-bottom: 1px solid;
+}
+
+table > thead > tr > th,
+table > thead > tr > td,
+table > tbody > tr > th,
+table > tbody > tr > td {
+	padding: 5px 10px;
+}
+
+table > tbody > tr + tr > td {
+	border-top: 1px solid;
+}
+
+blockquote {
+	margin: 0 7px 0 5px;
+	padding: 0 16px 0 10px;
+	border-left-width: 5px;
+	border-left-style: solid;
+}
+
+code {
+	font-family: Menlo, Monaco, Consolas, "Droid Sans Mono", "Courier New", monospace, "Droid Sans Fallback";
+	font-size: 1em;
+	line-height: 1.357em;
+}
+
+body.wordWrap pre {
+	white-space: pre-wrap;
+}
+
+pre:not(.hljs),
+pre.hljs code > div {
+	padding: 16px;
+	border-radius: 3px;
+	overflow: auto;
+}
+
+pre code {
+	color: var(--vscode-editor-foreground);
+	tab-size: 4;
+}
+
+/** Theming */
+
+.vscode-light pre {
+	background-color: rgba(220, 220, 220, 0.4);
+}
+
+.vscode-dark pre {
+	background-color: rgba(10, 10, 10, 0.4);
+}
+
+.vscode-high-contrast pre {
+	background-color: rgb(0, 0, 0);
+}
+
+.vscode-high-contrast h1 {
+	border-color: rgb(0, 0, 0);
+}
+
+.vscode-light table > thead > tr > th {
+	border-color: rgba(0, 0, 0, 0.69);
+}
+
+.vscode-dark table > thead > tr > th {
+	border-color: rgba(255, 255, 255, 0.69);
+}
+
+.vscode-light h1,
+.vscode-light hr,
+.vscode-light table > tbody > tr + tr > td {
+	border-color: rgba(0, 0, 0, 0.18);
+}
+
+.vscode-dark h1,
+.vscode-dark hr,
+.vscode-dark table > tbody > tr + tr > td {
+	border-color: rgba(255, 255, 255, 0.18);
+}
+
+</style>
+
+<style>
+/* Tomorrow Theme */
+/* http://jmblog.github.com/color-themes-for-google-code-highlightjs */
+/* Original theme - https://github.com/chriskempson/tomorrow-theme */
+
+/* Tomorrow Comment */
+.hljs-comment,
+.hljs-quote {
+	color: #8e908c;
+}
+
+/* Tomorrow Red */
+.hljs-variable,
+.hljs-template-variable,
+.hljs-tag,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class,
+.hljs-regexp,
+.hljs-deletion {
+	color: #c82829;
+}
+
+/* Tomorrow Orange */
+.hljs-number,
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-literal,
+.hljs-type,
+.hljs-params,
+.hljs-meta,
+.hljs-link {
+	color: #f5871f;
+}
+
+/* Tomorrow Yellow */
+.hljs-attribute {
+	color: #eab700;
+}
+
+/* Tomorrow Green */
+.hljs-string,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition {
+	color: #718c00;
+}
+
+/* Tomorrow Blue */
+.hljs-title,
+.hljs-section {
+	color: #4271ae;
+}
+
+/* Tomorrow Purple */
+.hljs-keyword,
+.hljs-selector-tag {
+	color: #8959a8;
+}
+
+.hljs {
+	display: block;
+	overflow-x: auto;
+	color: #4d4d4c;
+	padding: 0.5em;
+}
+
+.hljs-emphasis {
+	font-style: italic;
+}
+
+.hljs-strong {
+	font-weight: bold;
+}
+</style>
+
+<style>
+/*
+ * Custom MD PDF CSS
+ */
+html,footer,header{
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "Meiryo";
+
+ }
+body {
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "Meiryo";
+	padding: 0 12px;
+}
+
+pre {
+	background-color: #f8f8f8;
+	border: 1px solid #cccccc;
+	border-radius: 3px;
+	overflow-x: auto;
+	white-space: pre-wrap;
+	overflow-wrap: break-word;
+}
+
+pre:not(.hljs) {
+	padding: 23px;
+	line-height: 19px;
+}
+
+blockquote {
+	background: rgba(127, 127, 127, 0.1);
+	border-color: rgba(0, 122, 204, 0.5);
+}
+
+.emoji {
+	height: 1.4em;
+}
+
+code {
+	font-size: 14px;
+	line-height: 19px;
+}
+
+/* for inline code */
+:not(pre):not(.hljs) > code {
+	color: #C9AE75; /* Change the old color so it seems less like an error */
+	font-size: inherit;
+}
+
+/* Page Break : use <div class="page"/> to insert page break
+-------------------------------------------------------- */
+.page {
+	page-break-after: always;
+}
+
+</style>
+<link rel="stylesheet" href="file:///Users/beatrizfcmenezes/Documents/GitHub/BG-forecasting/R%3A%5C2.Travail%5C1.Enseignement%5CCours%5C_1.Outils%5C2.Developpement%5C1.SCSS%5Cmain.css" type="text/css"><link rel="stylesheet" href="file:///Users/beatrizfcmenezes/Documents/GitHub/BG-forecasting/D%3A%5Crdaros%5CCours%5C_1.Outils%5C2.Developpement%5C1.SCSS%5Cmain.css" type="text/css">
+</head>
+
+<body>
+    <h1 id="data-module-for-bg-forecasting">Data Module for BG-Forecasting</h1>
+<p>This module provides comprehensive data loading, preprocessing, and PyTorch integration for blood glucose forecasting research. The implementation is <strong>based on and adapted from the <a href="https://github.com/r-cui/GluPred">GluPred project</a></strong>, with significant enhancements for research workflows and modern deep learning practices.</p>
+<h2 id="overview">Overview</h2>
+<p>The data module follows a clean separation of concerns:</p>
+<ul>
+<li><strong>Loaders</strong>: Extract raw data from XML files without modifications</li>
+<li><strong>Preprocessors</strong>: Handle all data transformations, feature engineering, and quality control
+<ul>
+<li>Enhanced basal insulin handling with proper temporal logic</li>
+<li>Debug information to track preprocessing steps</li>
+</ul>
+</li>
+<li><strong>PyTorch Datasets</strong>: Convert preprocessed data into training-ready tensors using window-based approach</li>
+</ul>
+<h2 id="module-structure">Module Structure</h2>
+<pre class="hljs"><code><div>benchmark/data/
+├── __init__.py              # Module initialization
+├── loaders.py              # Raw data loading from XML files
+├── preprocessors.py        # Data preprocessing and feature engineering
+├── torch_dataset.py        # PyTorch dataset classes for training
+├── test_data.py            # Test pipeline with complete examples
+└── README.md              # This documentation
+</div></code></pre>
+<h2 id="data-flow-pipeline">Data Flow Pipeline</h2>
+<pre class="hljs"><code><div>Raw OhioT1DM XML Files → Loader → Preprocessor → PyTorch Dataset → Model Training
+</div></code></pre>
+<ol>
+<li><strong>Loading</strong>: XML files are parsed and combined into raw DataFrames</li>
+<li><strong>Preprocessing</strong>:
+<ul>
+<li>Temporal event handling (basal insulin, bolus, etc.)</li>
+<li>Missing values handling with configurable strategies</li>
+<li>Feature engineering with cyclical time encoding</li>
+<li>CSV saving for processed data inspection</li>
+</ul>
+</li>
+<li><strong>Dataset Creation</strong>: Time series sequences are extracted using window approach</li>
+<li><strong>Model Training</strong>: PyTorch DataLoaders feed data to neural networks</li>
+</ol>
+<hr>
+<h2 id="supported-datasets">Supported Datasets</h2>
+<h3 id="ohiot1dm-dataset">OhioT1DM Dataset</h3>
+<p>The primary supported dataset is the OhioT1DM (Ohio Type 1 Diabetes Mellitus) dataset from the Ohio University Diabetes Research Center.</p>
+<p><strong>Versions Supported:</strong></p>
+<ul>
+<li><strong>2018</strong>: 6 patients, training/test splits</li>
+<li><strong>2020</strong>: 6 patients, training/test splits</li>
+</ul>
+<p><strong>Data Types:</strong></p>
+<ul>
+<li>Continuous Glucose Monitoring (CGM)</li>
+<li>Insulin delivery (basal and bolus)
+<ul>
+<li>Enhanced basal rate handling with proper temporal logic</li>
+<li>Automatic conversion from hourly to sampling-interval rates</li>
+<li>Temporary basal rate handling with duration support</li>
+</ul>
+</li>
+<li>Meal information (carbohydrates, meal type)</li>
+<li>Physiological data (heart rate, galvanic skin response, skin temperature)</li>
+<li>Lifestyle data (sleep, work, exercise)</li>
+</ul>
+<hr>
+<h2 id="testing-and-validation-testdatapy">Testing and Validation (<code>test_data.py</code>)</h2>
+<p>The module includes comprehensive test examples to validate the entire data pipeline and demonstrate proper usage patterns.</p>
+<h3 id="test-functions">Test Functions</h3>
+<h4 id="examplesinglepatienttraining"><code>example_single_patient_training()</code></h4>
+<p><strong>Purpose</strong>: Demonstrates complete pipeline for training on individual patients.</p>
+<p><strong>What it tests:</strong></p>
+<ul>
+<li>Data loading from XML files</li>
+<li>Preprocessing pipeline execution</li>
+<li>PyTorch dataset creation</li>
+<li>DataLoader configuration</li>
+<li>End-to-end data flow validation</li>
+</ul>
+<p><strong>Output</strong>: Validates data shapes, columns, and creates training-ready DataLoaders.</p>
+<h4 id="examplemultipatienttraining"><code>example_multi_patient_training()</code></h4>
+<p><strong>Purpose</strong>: Tests multi-patient scenarios for transfer learning and population models.</p>
+<p><strong>What it tests:</strong></p>
+<ul>
+<li>Multiple patient data loading</li>
+<li>Cross-patient data consistency</li>
+<li>Transfer learning dataset preparation</li>
+<li>Global vs. target patient data separation</li>
+</ul>
+<p><strong>Output</strong>: Creates datasets for global training and target patient fine-tuning.</p>
+<h2 id="time-series-forecasting-approach">Time Series Forecasting Approach</h2>
+<p>The module implements a window-based approach for blood glucose forecasting, which is the standard methodology in the field:</p>
+<h3 id="window-based-sequence-creation">Window-Based Sequence Creation</h3>
+<ul>
+<li><strong>Input Window</strong>: Fixed-length sequence of past observations (default: 12 samples = 60 minutes)</li>
+<li><strong>Prediction Horizon</strong>: Number of future time steps to predict (configurable)</li>
+<li><strong>Sliding Window</strong>: Sequences are created with a sliding window to maximize training data</li>
+</ul>
+<h3 id="advantages-of-window-approach">Advantages of Window Approach</h3>
+<ol>
+<li><strong>Clinical Relevance</strong>: Matches physiological dynamics of glucose metabolism</li>
+<li><strong>Model Compatibility</strong>: Ideally suited for recurrent models (LSTM, GRU) and transformers</li>
+<li><strong>Flexibility</strong>: Supports both single-step and multi-horizon predictions</li>
+<li><strong>Data Efficiency</strong>: Generates multiple training examples from continuous time series</li>
+</ol>
+<h3 id="implementation">Implementation</h3>
+<p>The windowing approach is implemented in both:</p>
+<ul>
+<li><code>preprocessors.py</code>: <code>create_sequences()</code> method creates NumPy arrays</li>
+<li><code>torch_dataset.py</code>: <code>OhioDataset</code> class creates PyTorch-ready tensors with proper validation</li>
+</ul>
+<h3 id="running-tests">Running Tests</h3>
+<pre class="hljs"><code><div><span class="hljs-comment"># From the benchmark/data directory</span>
+<span class="hljs-built_in">cd</span> benchmark/data
+python test_data.py
+</div></code></pre>
+<p><strong>Expected Output:</strong></p>
+<pre class="hljs"><code><div>============================================================
+SINGLE PATIENT PYTORCH DATASET EXAMPLE
+============================================================
+Loading data for patient 540...
+Train data shape: (X, Y)
+Test data shape: (X, Y)
+✓ Single patient dataset ready for training!
+
+============================================================
+MULTI-PATIENT PYTORCH DATASET EXAMPLE
+============================================================
+Loading data for patients [540, 544, 552, 567, 584, 596]...
+Global dataset (all other patients): X sequences
+Target patient train: Y sequences
+Target patient test: Z sequences
+✓ Multi-patient datasets ready for transfer learning!
+
+============================================================
+ALL EXAMPLES COMPLETED!
+============================================================
+DATA PIPELINE TESTS PASSED -- ready for model training!
+</div></code></pre>
+<h3 id="test-validation-points">Test Validation Points</h3>
+<ol>
+<li><strong>Data Loading</strong>: Verifies XML parsing and DataFrame creation</li>
+<li><strong>Preprocessing</strong>: Confirms feature engineering and missing value handling</li>
+<li><strong>PyTorch Integration</strong>: Validates tensor creation and normalization</li>
+<li><strong>Sequence Extraction</strong>: Tests time series windowing</li>
+<li><strong>Multi-Patient Handling</strong>: Ensures consistent processing across subjects</li>
+</ol>
+<h3 id="using-tests-for-development">Using Tests for Development</h3>
+<p>The test functions serve multiple purposes:</p>
+<ul>
+<li><strong>Pipeline Validation</strong>: Ensure changes don't break the data flow</li>
+<li><strong>Usage Examples</strong>: Demonstrate proper API usage</li>
+<li><strong>Data Quality Checks</strong>: Validate preprocessing results</li>
+</ul>
+<hr>
+<h2 id="core-components">Core Components</h2>
+<h3 id="1-data-loaders-loaderspy">1. Data Loaders (<code>loaders.py</code>)</h3>
+<h4 id="ohiot1dmdataloader"><code>OhioT1DMDataLoader</code></h4>
+<p><strong>Purpose</strong>: Parse OhioT1DM XML files and return raw, unmodified DataFrames.</p>
+<p><strong>Key Features:</strong></p>
+<ul>
+<li>Handles both 2018 and 2020 dataset versions</li>
+<li>Parses XML files for CGM, insulin, meals, and physiological data</li>
+<li>Combines multiple data sources with proper time alignment</li>
+<li>Returns raw data without any preprocessing</li>
+</ul>
+<p><strong>Usage:</strong></p>
+<pre class="hljs"><code><div><span class="hljs-keyword">from</span> benchmark.data.loaders <span class="hljs-keyword">import</span> OhioT1DMDataLoader
+
+loader = OhioT1DMDataLoader(
+    data_dir=<span class="hljs-string">"/path/to/data"</span>,
+    sampling_rate=<span class="hljs-number">5</span>,  <span class="hljs-comment"># 5-minute intervals</span>
+    version=<span class="hljs-string">"2020"</span>
+)
+
+<span class="hljs-comment"># Load single patient</span>
+patient_df = loader.load_patient_data(<span class="hljs-number">540</span>, <span class="hljs-string">'train'</span>)
+
+<span class="hljs-comment"># Load multiple patients</span>
+train_data = load_ohiot1dm_data(
+    data_dir=<span class="hljs-string">"/path/to/data"</span>,
+    patient_ids=[<span class="hljs-number">540</span>, <span class="hljs-number">544</span>, <span class="hljs-number">552</span>],
+    mode=<span class="hljs-string">'train'</span>,
+    version=<span class="hljs-string">'2020'</span>
+)
+</div></code></pre>
+<p><strong>Columns Returned:</strong></p>
+<ul>
+<li><code>glucose</code>: Blood glucose levels (mg/dL)</li>
+<li><code>basal</code>: Basal insulin rate (units/hour)</li>
+<li><code>bolus</code>: Bolus insulin (units)</li>
+<li><code>bolus_dur</code>: Bolus duration (minutes)</li>
+<li><code>carbs</code>: Carbohydrate intake (grams)</li>
+<li><code>meal_type</code>: Type of meal</li>
+<li><code>hr</code>: Heart rate (bpm)</li>
+<li><code>gsr</code>: Galvanic skin response (μS)</li>
+<li><code>st</code>: Skin temperature (°C)</li>
+</ul>
+<h3 id="2-data-preprocessors-preprocessorspy">2. Data Preprocessors (<code>preprocessors.py</code>)</h3>
+<h4 id="ohiobgdatapreprocessor"><code>OhioBGDataPreprocessor</code></h4>
+<p><strong>Purpose</strong>: Transform raw data into ML-ready format with comprehensive preprocessing.</p>
+<p><strong>Key Features:</strong></p>
+<ul>
+<li><strong>Missing Data Handling</strong>: Fill missing values, handle -1 markers</li>
+<li><strong>Temporal Event Processing</strong>: Apply insulin duration, meal effects</li>
+<li><strong>Feature Engineering</strong>: Time-based features, glucose derivatives, cumulative features</li>
+<li><strong>Outlier Detection</strong>: Statistical outlier identification and flagging</li>
+<li><strong>Normalization</strong>: Multiple scaling options (standard, minmax, robust)</li>
+<li><strong>Sequence Creation</strong>: Extract input-output pairs for forecasting</li>
+</ul>
+<p><strong>Processing Pipeline:</strong></p>
+<ol>
+<li><strong>Basic Preprocessing</strong>: Handle missing values, temporal events</li>
+<li><strong>Feature Engineering</strong>: Create time-based and glucose-derived features</li>
+<li><strong>Outlier Detection</strong>: Flag anomalous values</li>
+<li><strong>Normalization</strong>: Scale features for ML models</li>
+<li><strong>Sequence Creation</strong>: Extract training sequences</li>
+</ol>
+<p><strong>Usage:</strong></p>
+<pre class="hljs"><code><div><span class="hljs-keyword">from</span> benchmark.data.preprocessors <span class="hljs-keyword">import</span> OhioBGDataPreprocessor
+
+preprocessor = OhioBGDataPreprocessor(
+    target_column=<span class="hljs-string">'glucose'</span>,
+    sampling_rate=<span class="hljs-number">5</span>
+)
+
+<span class="hljs-comment"># Full preprocessing pipeline</span>
+processed_df = preprocessor.preprocess_patient_data(
+    raw_df,
+    apply_basic_preprocessing=<span class="hljs-literal">True</span>,
+    include_feature_engineering=<span class="hljs-literal">True</span>,
+    normalize=<span class="hljs-literal">True</span>,
+    handle_missing=<span class="hljs-string">'interpolate'</span>
+)
+
+<span class="hljs-comment"># Create sequences for training</span>
+X, y = preprocessor.create_sequences(
+    processed_df,
+    sequence_length=<span class="hljs-number">12</span>,      <span class="hljs-comment"># 1 hour history</span>
+    prediction_horizon=<span class="hljs-number">6</span>,    <span class="hljs-comment"># 30 minutes ahead</span>
+    step_size=<span class="hljs-number">1</span>
+)
+</div></code></pre>
+<p><strong>Feature Engineering:</strong></p>
+<ul>
+<li><strong>Temporal Features</strong>: Hour, day of week, weekend indicators</li>
+<li><strong>Glucose Features</strong>: Differences, rolling statistics, trends</li>
+<li><strong>Cumulative Features</strong>: Insulin and carb sums over time windows</li>
+<li><strong>Outlier Flags</strong>: Binary indicators for anomalous values</li>
+</ul>
+<h3 id="3-pytorch-datasets-torchdatasetpy">3. PyTorch Datasets (<code>torch_dataset.py</code>)</h3>
+<h4 id="ohiodataset"><code>OhioDataset</code></h4>
+<p><strong>Purpose</strong>: Convert preprocessed DataFrames into PyTorch-compatible datasets for deep learning.</p>
+<p><strong>Key Features:</strong></p>
+<ul>
+<li><strong>Sequence Extraction</strong>: Create time series sequences without missing values</li>
+<li><strong>Standardization</strong>: Z-score normalization using training statistics</li>
+<li><strong>Insulin Smoothing</strong>: Redistribute extended bolus over time (adapted from GluPred)</li>
+<li><strong>Flexible Features</strong>: Support univariate (glucose-only) or multivariate models</li>
+<li><strong>Consistent Normalization</strong>: Share statistics between train/test sets</li>
+</ul>
+<p><strong>Usage:</strong></p>
+<pre class="hljs"><code><div><span class="hljs-keyword">from</span> benchmark.data.torch_dataset <span class="hljs-keyword">import</span> OhioDataset, prepare_personal_data
+<span class="hljs-keyword">from</span> torch.utils.data <span class="hljs-keyword">import</span> DataLoader
+
+<span class="hljs-comment"># Create datasets</span>
+train_dataset = OhioDataset(
+    raw_df=preprocessed_train_df,
+    sequence_length=<span class="hljs-number">12</span>,
+    prediction_horizon=<span class="hljs-number">1</span>,
+    unimodal=<span class="hljs-literal">False</span>  <span class="hljs-comment"># Use multiple features</span>
+)
+
+test_dataset = OhioDataset(
+    raw_df=preprocessed_test_df,
+    sequence_length=<span class="hljs-number">12</span>,
+    prediction_horizon=<span class="hljs-number">1</span>,
+    external_mean=train_dataset.mean,
+    external_std=train_dataset.std,
+    unimodal=<span class="hljs-literal">False</span>
+)
+
+<span class="hljs-comment"># Create DataLoaders</span>
+train_loader = DataLoader(train_dataset, batch_size=<span class="hljs-number">32</span>, shuffle=<span class="hljs-literal">True</span>)
+test_loader = DataLoader(test_dataset, batch_size=<span class="hljs-number">32</span>, shuffle=<span class="hljs-literal">False</span>)
+
+<span class="hljs-comment"># Training loop</span>
+<span class="hljs-keyword">for</span> sequences, targets <span class="hljs-keyword">in</span> train_loader:
+    <span class="hljs-comment"># sequences: (batch_size, sequence_length, n_features)</span>
+    <span class="hljs-comment"># targets: (batch_size, prediction_horizon)</span>
+    predictions = model(sequences)
+    loss = criterion(predictions, targets)
+    <span class="hljs-comment"># ... training code</span>
+</div></code></pre>
+<hr>
+<h2 id="glupred-integration">GluPred Integration</h2>
+<p>This implementation is <strong>based on and inspired by the GluPred project</strong>, with significant adaptations:</p>
+<h3 id="from-glupred">From GluPred:</h3>
+<ul>
+<li><strong>Dataset structure</strong>: Core PyTorch Dataset class design</li>
+<li><strong>Insulin smoothing</strong>: Algorithm for distributing extended bolus over time</li>
+<li><strong>Sequence extraction</strong>: Method for finding contiguous valid sequences</li>
+<li><strong>Normalization approach</strong>: Z-score standardization using training statistics</li>
+</ul>
+<h3 id="enhancements-for-bg-forecasting">Enhancements for BG-Forecasting:</h3>
+<ul>
+<li><strong>Modular architecture</strong>: Separated loading, preprocessing, and dataset creation</li>
+<li><strong>Advanced preprocessing</strong>: Comprehensive feature engineering and outlier detection</li>
+<li><strong>Flexible data handling</strong>: Support for missing values and various data quality issues</li>
+<li><strong>Research workflow</strong>: Designed for experimental reproducibility</li>
+</ul>
+<h3 id="key-algorithm-insulin-smoothing">Key Algorithm: Insulin Smoothing</h3>
+<p>The insulin smoothing algorithm (adapted from GluPred) handles extended bolus delivery:</p>
+<pre class="hljs"><code><div><span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">_smooth_bolus</span><span class="hljs-params">(self, bolus, bolus_dur)</span>:</span>
+    <span class="hljs-string">"""Redistribute extended bolus over delivery duration."""</span>
+    <span class="hljs-keyword">for</span> i <span class="hljs-keyword">in</span> range(len(bolus)):
+        <span class="hljs-keyword">if</span> bolus[i] &gt; <span class="hljs-number">0</span> <span class="hljs-keyword">and</span> bolus_dur[i] &gt; <span class="hljs-number">0</span>:
+            <span class="hljs-comment"># Find consecutive identical bolus values</span>
+            j = <span class="hljs-number">1</span>
+            <span class="hljs-keyword">while</span> i + j &lt; len(bolus) <span class="hljs-keyword">and</span> bolus[i + j] == bolus[i]:
+                j += <span class="hljs-number">1</span>
+            <span class="hljs-comment"># Distribute total dose over time steps</span>
+            bolus[i:i+j] = bolus[i:i+j] / j
+    <span class="hljs-keyword">return</span> bolus
+</div></code></pre>
+<p>This ensures that extended insulin delivery (e.g., for high-fat meals) is represented accurately for ML models.</p>
+<hr>
+<h2 id="usage-examples">Usage Examples</h2>
+<h3 id="quick-start-with-tests">Quick Start with Tests</h3>
+<p>The fastest way to get started is to run the test pipeline:</p>
+<pre class="hljs"><code><div><span class="hljs-comment"># Clone and navigate to data module</span>
+<span class="hljs-built_in">cd</span> benchmark/data
+
+<span class="hljs-comment"># Run comprehensive pipeline tests</span>
+python test_data.py
+
+<span class="hljs-comment"># This will validate:</span>
+<span class="hljs-comment"># ✓ Data loading from XML files</span>
+<span class="hljs-comment"># ✓ Preprocessing pipeline</span>
+<span class="hljs-comment"># ✓ PyTorch dataset creation</span>
+<span class="hljs-comment"># ✓ Multi-patient handling</span>
+<span class="hljs-comment"># ✓ Transfer learning setup</span>
+</div></code></pre>
+<hr>
+<h2 id="research-features">Research Features</h2>
+<h3 id="experimental-reproducibility">Experimental Reproducibility</h3>
+<ul>
+<li><strong>Deterministic processing</strong>: Consistent results across runs</li>
+<li><strong>Configurable parameters</strong>: Easy experiment configuration</li>
+<li><strong>Detailed logging</strong>: Track preprocessing steps and statistics</li>
+<li><strong>Version control</strong>: Dataset version tracking</li>
+</ul>
+<h3 id="extensibility">Extensibility</h3>
+<p>The architecture supports:</p>
+<ul>
+<li><strong>Additional datasets</strong>: Easy integration of new data sources</li>
+<li><strong>Custom preprocessing</strong>: Modular preprocessing steps</li>
+<li><strong>Different ML frameworks</strong>: Not limited to PyTorch</li>
+<li><strong>Various prediction tasks</strong>: Single/multi-step, single/multi-variate</li>
+</ul>
+<hr>
+<h2 id="requirements">Requirements</h2>
+<h3 id="python-dependencies">Python Dependencies</h3>
+<ul>
+<li><code>pandas &gt;= 1.3.0</code></li>
+<li><code>numpy &gt;= 1.20.0</code></li>
+<li><code>scikit-learn &gt;= 1.0.0</code></li>
+<li><code>torch &gt;= 1.9.0</code> (for PyTorch datasets)</li>
+<li><code>datetime</code>, <code>xml.etree.ElementTree</code> (standard library)</li>
+</ul>
+<h3 id="data-requirements">Data Requirements</h3>
+<ul>
+<li>OhioT1DM dataset XML files in proper directory structure</li>
+<li>Sufficient disk space for processed data</li>
+<li>Memory requirements depend on number of patients and sequence length</li>
+</ul>
+<hr>
+<h2 id="acknowledgments">Acknowledgments</h2>
+<p>This implementation is based on the excellent work from the <strong>GluPred project</strong>:</p>
+<blockquote>
+<p><strong>GluPred: A Glucose Prediction System using Deep Learning</strong></p>
+<p>Original authors: [Cui, Ran and Hettiarachchi, Chirath and Nolan, Christopher J and Daskalaki, Elena and Suominen, Hanna]</p>
+<p>Our implementation adapts their PyTorch dataset design and insulin smoothing algorithms while extending functionality for comprehensive research workflows.</p>
+</blockquote>
+<h3 id="citation">Citation</h3>
+<p>If you use this data module in your research, please cite both:</p>
+<ol>
+<li><strong>This BG-forecasting project</strong></li>
+<li><strong>The original GluPred project</strong> that inspired the core dataset design</li>
+</ol>
+<hr>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<h3 id="common-issues">Common Issues</h3>
+<ol>
+<li><strong>Import Errors</strong>: Ensure all dependencies are installed</li>
+<li><strong>Missing Data Files</strong>: Check data directory structure</li>
+<li><strong>Memory Issues</strong>: Reduce batch size or sequence length</li>
+<li><strong>NaN Values</strong>: Check preprocessing configuration</li>
+</ol>
+<h3 id="getting-help">Getting Help</h3>
+<ul>
+<li>Check the comprehensive examples in the parent directory</li>
+<li>Review error messages for specific issues</li>
+<li>Ensure data files are in the expected format and location</li>
+</ul>
+<hr>
+<h2 id="future-enhancements">Future Enhancements</h2>
+<ul>
+<li><strong>Additional datasets</strong>: Support for more diabetes datasets</li>
+<li><strong>Real-time processing</strong>: Streaming data capabilities</li>
+<li><strong>Performance optimization</strong>: Faster preprocessing and loading</li>
+</ul>
+<hr>
+<h2 id="debug-features">Debug Features</h2>
+<p>The module now includes comprehensive debug information to help understand the preprocessing pipeline:</p>
+<h3 id="basal-insulin-processing-debug">Basal Insulin Processing Debug</h3>
+<p>The <code>_apply_basal_rates()</code> method in <code>preprocessors.py</code> provides detailed logging:</p>
+<ul>
+<li>Number of basal rate changes detected</li>
+<li>Conversion from hourly rates to interval rates</li>
+<li>Temporary basal event details (start, end, affected rows)</li>
+<li>Statistical summaries of processed values</li>
+</ul>
+<h3 id="how-to-use-debug-output">How to Use Debug Output</h3>
+<p>Debug prints are integrated into the code and appear during preprocessing:</p>
+<pre class="hljs"><code><div>[BASIC] Starting basic preprocessing on X rows
+[TEMPORAL] Processing basal insulin rates...
+[BASAL] Found N non-missing basal values out of X rows
+[BASAL] After forward fill: X valid basal values
+[BASAL] Found N temporary basal events to process
+[BASAL] Temp event: X.XX U/hr → X.XXXX U/5min
+...
+</div></code></pre>
+<p>To save debugging output to a file, redirect stdout:</p>
+<pre class="hljs"><code><div><span class="hljs-keyword">import</span> sys
+<span class="hljs-comment"># Redirect stdout to file</span>
+original_stdout = sys.stdout
+<span class="hljs-keyword">with</span> open(<span class="hljs-string">'preprocessing_debug.log'</span>, <span class="hljs-string">'w'</span>) <span class="hljs-keyword">as</span> f:
+    sys.stdout = f
+    <span class="hljs-comment"># Run preprocessing</span>
+    preprocessed_data = preprocessor.basic_preprocessing(df)
+    sys.stdout = original_stdout
+</div></code></pre>
+<hr>
+<p><em>This module provides a robust foundation for blood glucose forecasting research, built on proven algorithms from GluPred and enhanced for modern deep learning workflows with improved physiological fidelity.</em></p>
+
+</body>
+
+</html>

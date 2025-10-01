@@ -215,12 +215,10 @@ class OhioBGDataPreprocessor:
         Apply basal insulin rates with proper temporal logic.
         
         This method handles both regular basal rates and temporary basal rates.
-        Basal rates persist until a new rate is set, and temporary basal rates
-        override regular rates for their specified duration.
-        
-        Since basal rates are given in hourly units, they are converted to 
-        the sampling rate (e.g., 5-minute intervals).
-        
+        Basal rates persist until a new rate is set, and temporary basal rates override regular rates for their specified duration.
+
+        Since basal rates are given in hourly units, they are converted to the sampling rate (e.g., 5-minute intervals).
+
         Args:
             df: DataFrame with basal rate data
             
