@@ -45,36 +45,44 @@ def example_single_patient_training():
         data_dir=DATA_DIR,
         patient_ids=[PATIENT_ID],
         mode='train',
-        version='2020'
+        version=['2018', '2020']
     )
     
     test_data = load_ohiot1dm_data(
         data_dir=DATA_DIR,
         patient_ids=[PATIENT_ID], 
         mode='test',
-        version='2020'
+        version=['2018', '2020']
     )
     
     # Preprocess the data
     preprocessed_train = preprocess_ohiot1dm_data(
         train_data,
         include_feature_engineering=True,
-        normalize=False  # We'll let PyTorch dataset handle normalization
     )
     
     preprocessed_test = preprocess_ohiot1dm_data(
         test_data,
         include_feature_engineering=True,
-        normalize=False
     )
     
     print(f"Train data shape: {preprocessed_train[PATIENT_ID].shape}")
     print(f"Test data shape: {preprocessed_test[PATIENT_ID].shape}")
     
     print(f"Train data columns: {preprocessed_train[PATIENT_ID].columns}")
-    print("First few rows of train data:")
-    print(preprocessed_train[PATIENT_ID].head())
     
+    # Save processed data to CSV
+    output_dir = "../../processed_data"
+    os.makedirs(output_dir, exist_ok=True)
+    
+    train_csv_path = os.path.join(output_dir, f"patient_{PATIENT_ID}_train_processed.csv")
+    
+    preprocessed_train[PATIENT_ID].to_csv(train_csv_path, index=True)
+    
+    print(f"Saved processed train data to: {train_csv_path}")
+    print()
+    print(f"Preparing dataset data for pytorch models...")
+
     # Step 2: Create PyTorch datasets
     train_dataset, test_dataset = prepare_patient_datasets(
         train_df=preprocessed_train[PATIENT_ID],
@@ -118,8 +126,8 @@ def example_multi_patient_training():
     
     # Configuration
     DATA_DIR = "../../data"
-    PATIENT_IDS = [540, 544, 552, 567, 584, 596]  
-    VERSION = '2020'
+    PATIENT_IDS = [559, 563, 570, 575, 588, 591, 540, 544, 552, 567, 584, 596]  
+    VERSION = ['2018','2020']
     TARGET_PATIENT = 540
     SEQUENCE_LENGTH = 12
     PREDICTION_HORIZON = 1  # Single-step for simplicity
@@ -151,20 +159,31 @@ def example_multi_patient_training():
         # Preprocess
         preprocessed_train = preprocess_ohiot1dm_data(
             train_data,
-            include_feature_engineering=False,  # Keep simple for example
-            normalize=False
+            include_feature_engineering=True,  # Keep simple for example
         )
         
         preprocessed_test = preprocess_ohiot1dm_data(
             test_data,
-            include_feature_engineering=False,
-            normalize=False
+            include_feature_engineering=True,
         )
         
         patient_data[patient_id] = {
             'train': preprocessed_train[patient_id],
             'test': preprocessed_test[patient_id]
         }
+    
+    # Save processed data to CSV for each patient
+    output_dir = "../../processed_data"
+    os.makedirs(output_dir, exist_ok=True)
+    
+    for patient_id in PATIENT_IDS:
+        train_csv_path = os.path.join(output_dir, f"patient_{patient_id}_train_processed.csv")
+        test_csv_path = os.path.join(output_dir, f"patient_{patient_id}_test_processed.csv")
+        
+        patient_data[patient_id]['train'].to_csv(train_csv_path, index=True)
+        patient_data[patient_id]['test'].to_csv(test_csv_path, index=True)
+        
+        print(f"✓ Saved patient {patient_id} data to CSV files")
     
     # Create multi-patient dataset for transfer learning
     global_dataset, target_train, target_test = prepare_multi_patient_dataset(

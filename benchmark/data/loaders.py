@@ -1,7 +1,7 @@
 """
-Data loaders for various blood glucose datasets.
+Data loaders
 
-This module provides standardized data loading functions for different
+This module provides standardized data loading functions for the Ohio T1DM 
 blood glucose datasets commonly used in research. The loaders return
 raw combined dataframes without any data alterations.
 
@@ -41,8 +41,8 @@ class OhioT1DMDataLoader:
         sampling_rate (int): Target sampling rate in minutes (default: 5)
         version (str): Dataset version ('2018' or '2020')
     """
-    
-    def __init__(self, data_dir: str, sampling_rate: int = 5, version: str = '2020'):
+
+    def __init__(self, data_dir: str, sampling_rate: int = 5, version: List[str] = ['2018', '2020']):
         """
         Initialize the OhioT1DM data loader.
         
@@ -331,7 +331,6 @@ class OhioT1DMDataLoader:
             'work_end': work_end
         }).set_index('ts')
 
-    
     def load_single_file(self, file_path: str) -> pd.DataFrame:
         """
         Load and parse a single XML file from the OhioT1DM dataset.
@@ -405,8 +404,6 @@ class OhioT1DMDataLoader:
         
         return merged_df
     
-    # ---------------------------------
-    
     def load_patient_data(self, patient_id: int, mode: str = 'train') -> pd.DataFrame:
         """
         Load raw data for a specific patient.
@@ -418,12 +415,23 @@ class OhioT1DMDataLoader:
         Returns:
             Raw merged DataFrame for the patient (no processing applied)
         """
+        # Determine which version this patient belongs to
+        patient_version = None
+        for version in self.version if isinstance(self.version, list) else [self.version]:
+            if patient_id in self.patient_ids[version]:
+                patient_version = version
+                break
+
+        if patient_version is None:
+            raise ValueError(f"Patient {patient_id} not found in any of the specified versions: {self.version}")
+
+        # Use the determined version for file path construction
         file_pattern = f"{patient_id}-ws-{mode}ing.xml"
         file_path = os.path.join(
             self.data_dir, 
             'raw', 
             'ohiot1dm', 
-            self.version, 
+            patient_version, 
             mode, 
             file_pattern
         )
@@ -438,7 +446,7 @@ class OhioT1DMDataLoader:
     
     def load_all_patients(self, mode: str = 'train') -> Dict[int, pd.DataFrame]:
         """
-        Load raw data for all patients in the specified version.
+        Load raw data for all patients in the specified version(s).
         
         Args:
             mode: 'train' or 'test'
@@ -448,14 +456,18 @@ class OhioT1DMDataLoader:
         """
         patient_data = {}
         
-        for patient_id in self.patient_ids[self.version]:
-            try:
-                df = self.load_patient_data(patient_id, mode)
-                patient_data[patient_id] = df
-                print(f"Successfully loaded patient {patient_id}")
-            except FileNotFoundError as e:
-                print(f"Warning: {e}")
-                continue
+        # Handle both single version and list of versions
+        versions = self.version if isinstance(self.version, list) else [self.version]
+        
+        for version in versions:
+            for patient_id in self.patient_ids[version]:
+                try:
+                    df = self.load_patient_data(patient_id, mode)
+                    patient_data[patient_id] = df
+                    print(f"Successfully loaded patient {patient_id} from version {version}")
+                except FileNotFoundError as e:
+                    print(f"Warning: {e}")
+                    continue
         
         return patient_data
     
@@ -471,19 +483,23 @@ class OhioT1DMDataLoader:
         """
         available_patients = []
         
-        for patient_id in self.patient_ids[self.version]:
-            file_pattern = f"{patient_id}-ws-{mode}ing.xml"
-            file_path = os.path.join(
-                self.data_dir, 
-                'raw', 
-                'ohiot1dm', 
-                self.version, 
-                mode, 
-                file_pattern
-            )
-            
-            if os.path.exists(file_path):
-                available_patients.append(patient_id)
+        # Handle both single version and list of versions
+        versions = self.version if isinstance(self.version, list) else [self.version]
+        
+        for version in versions:
+            for patient_id in self.patient_ids[version]:
+                file_pattern = f"{patient_id}-ws-{mode}ing.xml"
+                file_path = os.path.join(
+                    self.data_dir, 
+                    'raw', 
+                    'ohiot1dm', 
+                    version, 
+                    mode, 
+                    file_pattern
+                )
+                
+                if os.path.exists(file_path):
+                    available_patients.append(patient_id)
         
         return available_patients
 
@@ -491,7 +507,7 @@ class OhioT1DMDataLoader:
 def load_ohiot1dm_data(data_dir: str, 
                       patient_ids: Optional[List[int]] = None,
                       mode: str = 'train',
-                      version: str = '2020',
+                      version: List[str] = ['2018', '2020'],
                       sampling_rate: int = 5) -> Dict[int, pd.DataFrame]:
     """
     Convenience function to load raw OhioT1DM dataset.
@@ -500,7 +516,7 @@ def load_ohiot1dm_data(data_dir: str,
         data_dir: Path to the data directory
         patient_ids: List of specific patient IDs to load (None for all)
         mode: 'train' or 'test'
-        version: Dataset version ('2018' or '2020')
+        version: Dataset version (['2018', '2020'])
         sampling_rate: Target sampling rate in minutes
         
     Returns:
