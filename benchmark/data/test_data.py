@@ -153,7 +153,7 @@ def example_multi_patient_training():
             data_dir=DATA_DIR,
             patient_ids=[patient_id],
             mode='test', 
-            version= VERSION
+            version=VERSION
         )
         
         # Preprocess
