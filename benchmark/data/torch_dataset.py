@@ -11,9 +11,9 @@ import os
 from typing import Optional, List, Tuple, Union
 
 import numpy as np
-import pandas as pd
-import torch
-from torch.utils.data import Dataset, ConcatDataset
+import pandas as pd # type: ignore
+import torch # type: ignore
+from torch.utils.data import Dataset, ConcatDataset  # type: ignore
 
 
 class OhioDataset(Dataset):
@@ -63,8 +63,8 @@ class OhioDataset(Dataset):
         self.valid_sequences = self._find_valid_sequences()
         self._standardize(external_mean, external_std)
         
-        print(f"Dataset loaded: {len(self)} sequences of length {sequence_length}")
-        print(f"Features: {self.feature_columns}")
+        print(f"    Dataset loaded: {len(self)} sequences of length {sequence_length}")
+        print(f"    Features: {self.feature_columns}")
         
         # Validate no NaN in final data
         self._validate_data()
@@ -81,7 +81,11 @@ class OhioDataset(Dataset):
         
         if self.feature_columns is None:
             self.feature_columns = ['glucose', 'basal', 'bolus', 'carbs']
-        
+            # Add cyclical time features if present
+            for cyc_col in ['hour_sin', 'hour_cos']:
+                if cyc_col in self.df.columns:
+                    self.feature_columns.append(cyc_col)
+
         for col in self.feature_columns:
             if col in self.df.columns:
                 values = self.df[col].to_numpy(dtype=np.float32)
@@ -91,14 +95,10 @@ class OhioDataset(Dataset):
                     # Fill missing insulin/carbs with 0
                     values[np.isnan(values)] = 0.0
                 
-                if col == 'bolus' and 'bolus_dur' in self.df.columns:
-                    # Smooth long-acting insulin like in original
-                    values = self._smooth_bolus(values, self.df['bolus_dur'].to_numpy(dtype=np.float32))
-                
                 feature_data.append(values)
             else:
                 # If column doesn't exist, create zeros
-                print(f"Warning: Column '{col}' not found, using zeros")
+                print(f"    Warning: Column '{col}' not found, using zeros")
                 feature_data.append(np.zeros(len(self.df), dtype=np.float32))
         
         return np.array(feature_data, dtype=np.float32).T  # Shape: (time, features)
@@ -110,34 +110,7 @@ class OhioDataset(Dataset):
     def timestamp2dt(self, timestamp: int) -> datetime.datetime:
         """Convert timestamp to datetime."""
         return self.str2dt(str(self.df.index[timestamp]))
-
-    def _smooth_bolus(self, bolus: np.ndarray, bolus_dur: np.ndarray) -> np.ndarray:
-        """
-        Smooth long-acting insulin.
-        Redistribute long-acting insulin over the duration.
-        """
-        times = [self.timestamp2dt(i) for i, _ in enumerate(self.df.index)]
-        bolus = bolus.copy()
-        total_len = len(times)
-        
-        i = 0
-        while i < total_len:
-            if bolus[i] > 0 and not np.isnan(bolus_dur[i]) and bolus_dur[i] > 0:
-                # Found a non-instant bolus
-                j = 1
-                while i + j < total_len:
-                    if bolus[i + j] == bolus[i]:
-                        j += 1
-                    else:
-                        break
-                # Distribute the bolus over the duration
-                bolus[i: i + j] = bolus[i: i + j] / j
-                i += j
-            else:
-                i += 1
-        
-        return bolus
-
+    
     def _find_valid_sequences(self) -> List[Tuple[int, int]]:
         """
         Find all valid sequences without missing values.
@@ -148,7 +121,9 @@ class OhioDataset(Dataset):
         valid_sequences = []
         total_len = self.data.shape[0]
         required_length = self.sequence_length + self.prediction_horizon  # Full sequence + full target
-        
+
+        print(f"    Finding valid sequences in data of min {required_length} length")
+
         def check_contiguous_valid(start_idx: int) -> List[Tuple[int, int]]:
             """Check how many valid sequences we can extract starting from start_idx."""
             sequences = []
@@ -183,7 +158,11 @@ class OhioDataset(Dataset):
     def _standardize(self, external_mean: Optional[List[float]] = None, 
                     external_std: Optional[List[float]] = None):
         """Standardize features using z-score normalization."""
+
+        print(f"    Starting standardization...")
+
         if external_mean is None and external_std is None:
+            print(f"    Using dataset to get mean and std")
             # Compute statistics from this dataset
             self.mean = []
             self.std = []
@@ -191,13 +170,14 @@ class OhioDataset(Dataset):
                 self.mean.append(np.mean(self.data[:, i]))
                 self.std.append(np.std(self.data[:, i]))
         else:
+            print(f"    Using externally given mean and std")
             self.mean = external_mean
             self.std = external_std
         
         # Apply standardization
         for i in range(self.data.shape[1]):
             if self.std[i] > 0:  # Avoid division by zero
-                self.data[:, i] = (self.data[:, i] - self.mean[i]) / self.std[i]
+                self.data[:, i] = (self.data[:, i] - self.mean[i]) / self.std[i] # using z-score standardization
 
     def _validate_data(self):
         """Ensure no NaN values in the final sequences."""
@@ -335,7 +315,7 @@ def prepare_personal_data(train_csv_path: str,
 
 def prepare_multi_patient_dataset(patient_data: dict,
                                  sequence_length: int = 12,
-                                 prediction_horizon: int = 1,
+                                 prediction_horizon: int = 6,
                                  target_patient_id: Optional[int] = None,
                                  unimodal: bool = False) -> Union[ConcatDataset, Tuple[ConcatDataset, OhioDataset, OhioDataset]]:
     """

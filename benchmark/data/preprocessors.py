@@ -3,16 +3,13 @@ Data preprocessing utilities for blood glucose forecasting.
 
 This module provides standardized preprocessing functions including:
 - Missing data handling
-- Outlier detection and treatment
 - Feature engineering
-- Data normalization and scaling
 - Time series windowing
 """
 
-import pandas as pd
+import pandas as pd  # type: ignore
 import numpy as np
 from typing import Dict, List, Tuple, Optional, Union
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
 import warnings
 import os
 
@@ -44,14 +41,9 @@ class OhioBGDataPreprocessor:
         self.time_column = time_column
         self.sampling_rate = sampling_rate
         
-        # Scalers for different feature types
-        self.glucose_scaler = None
-        self.physiological_scaler = None
-        self.insulin_scaler = None
-        
         # Data quality parameters
-        self.glucose_range = (40, 400)  # Valid glucose range in mg/dL
-        self.max_gap_minutes = 30  # Maximum acceptable gap in minutes
+        self.glucose_range = (40, 400)  # Valid glucose range in mg/dL TODO:check
+        self.max_gap_minutes = 15  # Maximum acceptable gap in minutes
     
     def basic_preprocessing(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -68,11 +60,13 @@ class OhioBGDataPreprocessor:
             Basic preprocessed DataFrame
         """
         if df.empty:
+            print(f"    [BASIC] Input DataFrame is empty, skipping preprocessing")
             return df
-        
+
+        print(f"    [BASIC] Starting basic preprocessing on {len(df)} rows")
         df = df.copy()
         
-        # Fill missing values with appropriate defaults (same as original loader)
+        # Fill missing values with appropriate defaults 
         # Only process columns that exist in the data
         if 'glucose' in df.columns:
             df['glucose'] = df['glucose'].fillna(-1)
@@ -118,7 +112,7 @@ class OhioBGDataPreprocessor:
             df['exer_dur'] = df['exer_dur'].fillna(-1)
         
         # Drop rows with all NaN values
-        df = df.dropna(how='all')
+        df = df.dropna()
         
         # Add helper columns
         df['index'] = df.index
@@ -158,15 +152,12 @@ class OhioBGDataPreprocessor:
     def _apply_temporal_events(self, df: pd.DataFrame) -> pd.DataFrame:
         """Apply temporal event durations to the time series."""
         
-        # Apply temporary basal rates -> overwrite existing values
-        if 'temp_basal' in df.columns and 'basal_end' in df.columns and 'basal' in df.columns:
-            for i in range(len(df)):
-                if df['temp_basal'].iloc[i] != -1:
-                    basal_end_time = df['basal_end'].iloc[i]
-                    mask = (df['index'] >= df['index'].iloc[i]) & (df['index'] <= basal_end_time)
-                    df.loc[mask, 'basal'] = df['temp_basal'].iloc[i]
-            #drop temporary columns
-            df = df.drop(columns=['temp_basal', 'basal_end'], errors='ignore')
+        print(f"        [TEMPORAL] Starting temporal events processing...")
+        
+        # Apply basal insulin rates with proper temporal logic
+        print(f"        [TEMPORAL] Processing basal insulin rates...")
+        df = self._apply_basal_rates(df)
+        
         # Apply bolus durations
         if 'temp_bolus' in df.columns and 'bolus_end' in df.columns and 'bolus' in df.columns:
             for i in range(len(df)):
@@ -216,10 +207,86 @@ class OhioBGDataPreprocessor:
 
         return df
     
+    def _apply_basal_rates(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Apply basal insulin rates with proper temporal logic.
+        
+        This method handles both regular basal rates and temporary basal rates.
+        Basal rates persist until a new rate is set, and temporary basal rates override regular rates for their specified duration.
+
+        Since basal rates are given in hourly units, they are converted to the sampling rate (e.g., 5-minute intervals).
+
+        Args:
+            df: DataFrame with basal rate data
+            
+        Returns:
+            DataFrame with properly applied basal rates
+        """
+        if 'basal' not in df.columns:
+            print("         [BASAL] No basal column found, skipping basal processing")
+            return df
+            
+        df = df.copy()
+        print(f"            [BASAL] Processing basal rates for {len(df)} rows")
+        
+        # Convert hourly basal rates to sampling rate (e.g., 5-minute rates)
+        # Basal rates in the data are typically in units/hour
+        # Convert to units per sampling interval
+        sampling_factor = self.sampling_rate / 60.0  # Convert minutes to fraction of hour
+        print(f"            [BASAL] Sampling factor: {sampling_factor:.4f} (converting {self.sampling_rate}min intervals)")
+        
+        # Step 1: Handle regular basal rates - forward fill valid values
+        # Replace -1 with NaN for proper forward filling        
+        df['basal'] = df['basal'].replace(-1, np.nan)
+        
+        # Forward fill basal rates (a basal rate persists until changed)
+        df['basal'] = df['basal'].fillna(method='ffill')
+        
+        # Convert hourly rates to sampling interval rates    
+        df['basal'] = pd.to_numeric(df['basal'], errors='coerce')
+        df['basal'] = df['basal'] * sampling_factor
+        # Step 2: Handle temporary basal rates (temp_basal events)
+        if ('temp_basal' in df.columns and 'basal_end' in df.columns):            
+            # Process each temp_basal event
+            for i in range(len(df)):
+                if (df['temp_basal'].iloc[i] != -1 and 
+                    not pd.isna(df['temp_basal'].iloc[i]) and
+                    df['basal_end'].iloc[i] != -1 and
+                    not pd.isna(df['basal_end'].iloc[i])):
+                    
+                    temp_basal_rate = pd.to_numeric(df['temp_basal'].iloc[i], errors='coerce')
+                    basal_end_time = df['basal_end'].iloc[i]
+                    temp_start_time = df['index'].iloc[i]
+                    
+                    # Convert temp basal rate to sampling interval rate
+                    temp_basal_rate_interval = temp_basal_rate * sampling_factor
+                    
+                    # Apply temp basal rate from start time to end time
+                    mask = ((df['index'] >= temp_start_time) & 
+                           (df['index'] <= basal_end_time))
+                    
+                    df.loc[mask, 'basal'] = temp_basal_rate_interval
+            
+            # Clean up temporary columns
+            df = df.drop(columns=['temp_basal', 'basal_end'], errors='ignore')
+        else:
+            print(f"            [BASAL] No temporary basal columns found or incomplete temp basal data")
+        
+        # Fill any remaining NaN values with 0 (no basal insulin)
+        final_nan_count = df['basal'].isna().sum()
+        if final_nan_count > 0:
+            df['basal'] = df['basal'].fillna(0)
+        
+        # Show summary statistics
+        basal_stats = df['basal'].describe()
+        print(f"            [BASAL] Final basal stats - Min: {basal_stats['min']:.4f}, Max: {basal_stats['max']:.4f}, Mean: {basal_stats['mean']:.4f}")
+        
+        return df
+    
     def _check_missing_timesteps(self, df: pd.DataFrame) -> pd.DataFrame:
         """Check for missing timesteps and flag them."""
         for i in range(1, len(df)):
-            gap = (df['index'].iloc[i] - df['index'].iloc[i-1]).total_seconds() / 60.0
+            gap = (df['index'].iloc[i] - df['index'].iloc[i-1]).total_seconds() / 60.0 # Convert to minutes
             if gap != self.sampling_rate:
                 df.iloc[i, df.columns.get_loc('missing')] = gap
         
@@ -235,7 +302,7 @@ class OhioBGDataPreprocessor:
         Args:
             df: Input DataFrame
             strategy: Strategy for handling missing data
-                     ('interpolate', 'forward_fill', 'drop', 'zero')
+                     ('interpolate', 'forward_fill', 'drop')
             max_gap: Maximum gap size to interpolate (in time steps)
             
         Returns:
@@ -246,76 +313,23 @@ class OhioBGDataPreprocessor:
         if max_gap is None:
             max_gap = self.max_gap_minutes // self.sampling_rate
         
+        # Convert -1 values to NaN for the target column
+        if self.target_column in df.columns:
+            df[self.target_column] = df[self.target_column].replace(-1, np.nan)
+        
+        # Apply strategy to glucose column
         if strategy == 'interpolate':
-            # Interpolate with limit on gap size
-            for col in df.select_dtypes(include=[np.number]).columns:
-                if col != self.time_column:
-                    df[col] = df[col].interpolate(method='linear', limit=max_gap)
+            df[self.target_column] = df[self.target_column].interpolate(method='linear', limit=max_gap)
         
         elif strategy == 'forward_fill':
-            # Forward fill with limit
-            for col in df.select_dtypes(include=[np.number]).columns:
-                if col != self.time_column:
-                    df[col] = df[col].fillna(method='ffill', limit=max_gap)
+            df[self.target_column] = df[self.target_column].fillna(method='ffill', limit=max_gap)
         
         elif strategy == 'drop':
             # Drop rows with missing glucose values
             df = df.dropna(subset=[self.target_column])
-        
-        elif strategy == 'zero':
-            # Fill missing values with zero (for insulin, carbs, etc.)
-            insulin_cols = [col for col in ['bolus', 'basal'] if col in df.columns]
-            lifestyle_cols = [col for col in ['carbs', 'exercise_intensity'] if col in df.columns]
-            
-            for col in insulin_cols + lifestyle_cols:
-                if col in df.columns:
-                    df[col] = df[col].fillna(0)
-        
+
+        print(f"    [MISS] Using {strategy} strategy with max gap of {max_gap} steps")
         return df
-    
-    def detect_outliers(self, 
-                       df: pd.DataFrame, 
-                       method: str = 'iqr',
-                       columns: List[str] = None) -> pd.DataFrame:
-        """
-        Detect outliers in the data.
-        
-        Args:
-            df: Input DataFrame
-            method: Outlier detection method ('iqr', 'z_score', 'isolation_forest')
-            columns: Columns to check for outliers
-            
-        Returns:
-            DataFrame with outlier flags
-        """
-        df = df.copy()
-        
-        if columns is None:
-            columns = [self.target_column, 'hr', 'gsr', 'st']
-        
-        outlier_flags = pd.DataFrame(index=df.index)
-        
-        for col in columns:
-            if col in df.columns:
-                values = pd.to_numeric(df[col], errors='coerce')
-                
-                if method == 'iqr':
-                    Q1 = values.quantile(0.25)
-                    Q3 = values.quantile(0.75)
-                    IQR = Q3 - Q1
-                    lower_bound = Q1 - 1.5 * IQR
-                    upper_bound = Q3 + 1.5 * IQR
-                    outliers = (values < lower_bound) | (values > upper_bound)
-                
-                elif method == 'z_score':
-                    z_scores = np.abs((values - values.mean()) / values.std())
-                    outliers = z_scores > 3
-                
-                outlier_flags[f'{col}_outlier'] = outliers
-        
-        # Combine outlier flags with original data
-        result = pd.concat([df, outlier_flags], axis=1)
-        return result
     
     #TODO: verify
     def engineer_features(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -342,84 +356,24 @@ class OhioBGDataPreprocessor:
             # Cyclical encoding for time features
             df['hour_sin'] = np.sin(2 * np.pi * df['hour'] / 24)
             df['hour_cos'] = np.cos(2 * np.pi * df['hour'] / 24)
-            
-            #drop non-cyclical columns 
+
+            print(f"    [ENGINEERING] Engineering features for hour-based cyclicality")
+
+            #drop non-cyclical columns
             df = df.drop(columns=['hour'], errors='ignore')
         
 
         #TODO: Calculate IOB -------------------------------- 
-        # Insulin features
-        insulin_cols = ['bolus', 'basal']
-        for col in insulin_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-                # Cumulative insulin over different windows
-                for window in [6, 12, 24]:  # 30min, 1hr, 2hr windows
-                    df[f'{col}_cumsum_{window}'] = (
-                        df[col].rolling(window=window, min_periods=1).sum()
-                    )
-        
-        # Meal/carb features
-        if 'carbs' in df.columns:
-            df['carbs'] = pd.to_numeric(df['carbs'], errors='coerce')
-            df['carbs'] = df['carbs'].fillna(0)
-            
-            # Cumulative carbs over different windows
-            for window in [6, 12, 24]:  # 30min, 1hr, 2hr windows
-                df[f'carbs_cumsum_{window}'] = (
-                    df['carbs'].rolling(window=window, min_periods=1).sum()
-                )
-        
-        return df
-    
-    def normalize_features(self, 
-                          df: pd.DataFrame, 
-                          feature_groups: Dict[str, List[str]] = None,
-                          scaler_type: str = 'standard') -> pd.DataFrame:
-        """
-        Normalize features by groups.
-        
-        Args:
-            df: Input DataFrame
-            feature_groups: Dictionary mapping group names to column lists
-            scaler_type: Type of scaler ('standard', 'minmax')
-            
-        Returns:
-            DataFrame with normalized features
-        """
-        df = df.copy()
-        
-        if feature_groups is None:
-            feature_groups = {
-                'glucose': [self.target_column],
-                'physiological': ['hr', 'gsr', 'st'],
-                'insulin': ['bolus', 'basal'],
-                'meal': ['carbs'],
-                'lifestyle': ['exercise_intensity']
-            }
-        
-        # Choose scaler
-        if scaler_type == 'standard':
-            ScalerClass = StandardScaler
-        elif scaler_type == 'minmax':
-            ScalerClass = MinMaxScaler
-        else:
-            raise ValueError(f"Unknown scaler type: {scaler_type}")
-        
-        # Apply scaling to each group
-        for group_name, columns in feature_groups.items():
-            available_cols = [col for col in columns if col in df.columns]
-            
-            if available_cols:
-                scaler = ScalerClass()
-                
-                # Fit and transform
-                df[available_cols] = scaler.fit_transform(
-                    df[available_cols].fillna(0)
-                )
-                
-                # Store scaler for later use
-                setattr(self, f'{group_name}_scaler', scaler)
+        # # Insulin features
+        # insulin_cols = ['bolus', 'basal']
+        # for col in insulin_cols:
+        #     if col in df.columns:
+        #         df[col] = pd.to_numeric(df[col], errors='coerce')
+        #         # Cumulative insulin over different windows
+        #         for window in [6, 12, 24]:  # 30min, 1hr, 2hr windows
+        #             df[f'{col}_cumsum_{window}'] = (
+        #                 df[col].rolling(window=window, min_periods=1).sum()
+        #             )
         
         return df
     
@@ -479,8 +433,7 @@ class OhioBGDataPreprocessor:
     def preprocess_patient_data(self, 
                                df: pd.DataFrame,
                                include_feature_engineering: bool = False,
-                               normalize: bool = True,
-                               handle_missing: str = 'interpolate'
+                               handle_missing: str = 'interpolate' #TODO check silvio
                                ) -> pd.DataFrame:
         """
         Complete preprocessing pipeline for a single patient.
@@ -509,15 +462,6 @@ class OhioBGDataPreprocessor:
         if include_feature_engineering:
             print("2. Engineering features...")
             df = self.engineer_features(df)
-
-        # Step 3: Detect outliers (but don't remove them yet)
-        print("3. Detecting outliers...")
-        df = self.detect_outliers(df)
-
-        # Step 4: Normalize features
-        if normalize:
-            print("4. Normalizing features...")
-            df = self.normalize_features(df)
         
         print("Preprocessing completed!")
         return df

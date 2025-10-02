@@ -8,7 +8,9 @@ The data module follows a clean separation of concerns:
 
 - **Loaders**: Extract raw data from XML files without modifications
 - **Preprocessors**: Handle all data transformations, feature engineering, and quality control
-- **PyTorch Datasets**: Convert preprocessed data into training-ready tensors
+  - Enhanced basal insulin handling with proper temporal logic
+  - Debug information to track preprocessing steps
+- **PyTorch Datasets**: Convert preprocessed data into training-ready tensors using window-based approach
 
 ##  Module Structure
 
@@ -29,8 +31,12 @@ Raw OhioT1DM XML Files → Loader → Preprocessor → PyTorch Dataset → Model
 ```
 
 1. **Loading**: XML files are parsed and combined into raw DataFrames
-2. **Preprocessing**: Missing values, outliers, and features are handled
-3. **Dataset Creation**: Time series sequences are extracted for training
+2. **Preprocessing**: 
+   - Temporal event handling (basal insulin, bolus, etc.)
+   - Missing values handling with configurable strategies
+   - Feature engineering with cyclical time encoding
+   - CSV saving for processed data inspection
+3. **Dataset Creation**: Time series sequences are extracted using window approach
 4. **Model Training**: PyTorch DataLoaders feed data to neural networks
 
 ---
@@ -48,6 +54,9 @@ The primary supported dataset is the OhioT1DM (Ohio Type 1 Diabetes Mellitus) da
 **Data Types:**
 - Continuous Glucose Monitoring (CGM)
 - Insulin delivery (basal and bolus)
+  - Enhanced basal rate handling with proper temporal logic
+  - Automatic conversion from hourly to sampling-interval rates
+  - Temporary basal rate handling with duration support
 - Meal information (carbohydrates, meal type)
 - Physiological data (heart rate, galvanic skin response, skin temperature)
 - Lifestyle data (sleep, work, exercise)
@@ -84,6 +93,29 @@ The module includes comprehensive test examples to validate the entire data pipe
 - Global vs. target patient data separation
 
 **Output**: Creates datasets for global training and target patient fine-tuning.
+
+## Time Series Forecasting Approach
+
+The module implements a window-based approach for blood glucose forecasting, which is the standard methodology in the field:
+
+### Window-Based Sequence Creation
+
+- **Input Window**: Fixed-length sequence of past observations (default: 12 samples = 60 minutes)
+- **Prediction Horizon**: Number of future time steps to predict (configurable)
+- **Sliding Window**: Sequences are created with a sliding window to maximize training data
+
+### Advantages of Window Approach
+
+1. **Clinical Relevance**: Matches physiological dynamics of glucose metabolism
+2. **Model Compatibility**: Ideally suited for recurrent models (LSTM, GRU) and transformers
+3. **Flexibility**: Supports both single-step and multi-horizon predictions
+4. **Data Efficiency**: Generates multiple training examples from continuous time series
+
+### Implementation
+
+The windowing approach is implemented in both:
+- `preprocessors.py`: `create_sequences()` method creates NumPy arrays
+- `torch_dataset.py`: `OhioDataset` class creates PyTorch-ready tensors with proper validation
 
 ### Running Tests
 
@@ -426,4 +458,46 @@ If you use this data module in your research, please cite both:
 - **Performance optimization**: Faster preprocessing and loading
 ---
 
-*This module provides a robust foundation for blood glucose forecasting research, built on proven algorithms from GluPred and enhanced for modern deep learning workflows.*
+## Debug Features
+
+The module now includes comprehensive debug information to help understand the preprocessing pipeline:
+
+### Basal Insulin Processing Debug
+
+The `_apply_basal_rates()` method in `preprocessors.py` provides detailed logging:
+
+- Number of basal rate changes detected
+- Conversion from hourly rates to interval rates
+- Temporary basal event details (start, end, affected rows)
+- Statistical summaries of processed values
+
+### How to Use Debug Output
+
+Debug prints are integrated into the code and appear during preprocessing:
+
+```
+[BASIC] Starting basic preprocessing on X rows
+[TEMPORAL] Processing basal insulin rates...
+[BASAL] Found N non-missing basal values out of X rows
+[BASAL] After forward fill: X valid basal values
+[BASAL] Found N temporary basal events to process
+[BASAL] Temp event: X.XX U/hr → X.XXXX U/5min
+...
+```
+
+To save debugging output to a file, redirect stdout:
+
+```python
+import sys
+# Redirect stdout to file
+original_stdout = sys.stdout
+with open('preprocessing_debug.log', 'w') as f:
+    sys.stdout = f
+    # Run preprocessing
+    preprocessed_data = preprocessor.basic_preprocessing(df)
+    sys.stdout = original_stdout
+```
+
+---
+
+*This module provides a robust foundation for blood glucose forecasting research, built on proven algorithms from GluPred and enhanced for modern deep learning workflows with improved physiological fidelity.*
