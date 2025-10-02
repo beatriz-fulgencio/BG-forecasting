@@ -11,9 +11,9 @@ import os
 from typing import Optional, List, Tuple, Union
 
 import numpy as np
-import pandas as pd
-import torch
-from torch.utils.data import Dataset, ConcatDataset
+import pandas as pd # type: ignore
+import torch # type: ignore
+from torch.utils.data import Dataset, ConcatDataset  # type: ignore
 
 
 class OhioDataset(Dataset):

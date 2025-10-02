@@ -8,8 +8,8 @@ from loaders import load_ohiot1dm_data
 from preprocessors import preprocess_ohiot1dm_data
 
 try:
-    import torch
-    from torch.utils.data import DataLoader
+    import torch  # type: ignore
+    from torch.utils.data import DataLoader  # type: ignore
     from torch_dataset import (
         OhioDataset, 
         prepare_patient_datasets,

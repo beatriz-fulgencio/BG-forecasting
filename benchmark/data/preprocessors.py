@@ -3,16 +3,13 @@ Data preprocessing utilities for blood glucose forecasting.
 
 This module provides standardized preprocessing functions including:
 - Missing data handling
-- Outlier detection and treatment
 - Feature engineering
-- Data normalization and scaling
 - Time series windowing
 """
 
-import pandas as pd
+import pandas as pd  # type: ignore
 import numpy as np
 from typing import Dict, List, Tuple, Optional, Union
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
 import warnings
 import os
 

@@ -16,7 +16,7 @@ For other datasets, please refer to the documentation for details on loading and
 
 import os
 import xml.etree.ElementTree as ET
-import pandas as pd
+import pandas as pd # type: ignore
 import numpy as np
 import datetime
 import warnings
