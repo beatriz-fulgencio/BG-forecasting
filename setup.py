@@ -10,7 +10,7 @@ setup(
     name="bg-forecasting-benchmark",
     version="0.1.0",
     author="Blood Glucose Forecasting Research Group",
-    author_email="beatrizfulgencio03@gmail.com",
+    author_email="contact@bg-forecasting.org",
     description="A reproducible benchmark framework for blood glucose forecasting models",
     long_description=long_description,
     long_description_content_type="text/markdown",
