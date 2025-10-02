@@ -1,0 +1,422 @@
+{
+  "540": {
+    "RNN": {
+      "mae": 96.0992660522461,
+      "rmse": 117.18733978271484,
+      "mard": 53.37479782104492,
+      "tir": 62.26759022967554,
+      "tir_pred": 0.0,
+      "tbr": 4.702880058330295,
+      "tbr_pred": 100.0,
+      "tar": 33.029529711994165,
+      "tar_pred": 0.0,
+      "clarke_zones": {
+        "A": 8.111556689755743,
+        "B": 56.61684287276705,
+        "C": 1.986875683558148,
+        "D": 0.0,
+        "E": 33.284724753919065
+      },
+      "parkes_zones": {
+        "A": 10.408312067079839,
+        "B": 49.99392392757321,
+        "C": 37.50151901810669,
+        "D": 2.0962449872402478,
+        "E": 0.0
+      },
+      "model_info": {
+        "model_name": "RNN_patient_540",
+        "model_type": "RNNBGModel",
+        "patient_id": 540,
+        "sequence_length": 12,
+        "prediction_horizon": 6,
+        "feature_dim": 4,
+        "hyperparameters": {
+          "hidden_size": 64,
+          "num_layers": 2,
+          "dropout": 0.2,
+          "learning_rate": 0.001,
+          "nonlinearity": "tanh"
+        }
+      },
+      "predictions_file": "results/RNN_patient_540_predictions.csv",
+      "training_history": {
+        "epochs_completed": 3,
+        "best_val_loss": 8689.413587596318,
+        "pretrain_epochs": 2,
+        "finetune_epochs": 1,
+        "pretrain_history": {
+          "train_losses": [
+            25824.248734355566,
+            19115.030168979323
+          ],
+          "val_losses": [
+            15275.396243578767,
+            10677.842499197346
+          ],
+          "epochs_completed": 2,
+          "best_val_loss": 10677.842499197346
+        },
+        "finetune_history": {
+          "train_losses": [
+            9529.535120769355
+          ],
+          "val_losses": [
+            8689.413587596318
+          ],
+          "epochs_completed": 1,
+          "best_val_loss": 8689.413587596318
+        }
+      },
+      "model_file": "saved_models/RNN_patient_540.pth"
+    },
+    "LSTM": {
+      "mae": 95.01229095458984,
+      "rmse": 116.24203491210938,
+      "mard": 52.62264633178711,
+      "tir": 62.26759022967554,
+      "tir_pred": 0.0,
+      "tbr": 4.702880058330295,
+      "tbr_pred": 100.0,
+      "tar": 33.029529711994165,
+      "tar_pred": 0.0,
+      "clarke_zones": {
+        "A": 8.640174990885892,
+        "B": 56.39202819297606,
+        "C": 1.6830720622189816,
+        "D": 0.0,
+        "E": 33.284724753919065
+      },
+      "parkes_zones": {
+        "A": 10.91870215092964,
+        "B": 50.2187386073642,
+        "C": 37.033661441244384,
+        "D": 1.8288978004617813,
+        "E": 0.0
+      },
+      "model_info": {
+        "model_name": "LSTM_patient_540",
+        "model_type": "LSTMBGModel",
+        "patient_id": 540,
+        "sequence_length": 12,
+        "prediction_horizon": 6,
+        "feature_dim": 4,
+        "hyperparameters": {
+          "hidden_size": 64,
+          "num_layers": 2,
+          "dropout": 0.2,
+          "learning_rate": 0.001
+        }
+      },
+      "predictions_file": "results/LSTM_patient_540_predictions.csv",
+      "training_history": {
+        "epochs_completed": 3,
+        "best_val_loss": 8517.566540025686,
+        "pretrain_epochs": 2,
+        "finetune_epochs": 1,
+        "pretrain_history": {
+          "train_losses": [
+            25745.59584645134,
+            18873.86481654229
+          ],
+          "val_losses": [
+            15110.098753210616,
+            10491.802995237585
+          ],
+          "epochs_completed": 2,
+          "best_val_loss": 10491.802995237585
+        },
+        "finetune_history": {
+          "train_losses": [
+            9317.091903316934
+          ],
+          "val_losses": [
+            8517.566540025686
+          ],
+          "epochs_completed": 1,
+          "best_val_loss": 8517.566540025686
+        }
+      },
+      "model_file": "saved_models/LSTM_patient_540.pth"
+    },
+    "GRU": {
+      "mae": 95.63439178466797,
+      "rmse": 116.78385162353516,
+      "mard": 53.05210494995117,
+      "tir": 62.26759022967554,
+      "tir_pred": 0.0,
+      "tbr": 4.702880058330295,
+      "tbr_pred": 100.0,
+      "tar": 33.029529711994165,
+      "tar_pred": 0.0,
+      "clarke_zones": {
+        "A": 8.463968890509173,
+        "B": 56.38595212054928,
+        "C": 1.8653542350224812,
+        "D": 0.0,
+        "E": 33.284724753919065
+      },
+      "parkes_zones": {
+        "A": 10.60882245716369,
+        "B": 49.9635435654393,
+        "C": 37.422530076558516,
+        "D": 2.005103900838498,
+        "E": 0.0
+      },
+      "model_info": {
+        "model_name": "GRU_patient_540",
+        "model_type": "GRUBGModel",
+        "patient_id": 540,
+        "sequence_length": 12,
+        "prediction_horizon": 6,
+        "feature_dim": 4,
+        "hyperparameters": {
+          "hidden_size": 64,
+          "num_layers": 2,
+          "dropout": 0.2,
+          "learning_rate": 0.001
+        }
+      },
+      "predictions_file": "results/GRU_patient_540_predictions.csv",
+      "training_history": {
+        "epochs_completed": 3,
+        "best_val_loss": 8615.138865849744,
+        "pretrain_epochs": 2,
+        "finetune_epochs": 1,
+        "pretrain_history": {
+          "train_losses": [
+            25780.16445846937,
+            19020.118936567163
+          ],
+          "val_losses": [
+            15215.011411065925,
+            10605.735137521404
+          ],
+          "epochs_completed": 2,
+          "best_val_loss": 10605.735137521404
+        },
+        "finetune_history": {
+          "train_losses": [
+            9431.664479819961
+          ],
+          "val_losses": [
+            8615.138865849744
+          ],
+          "epochs_completed": 1,
+          "best_val_loss": 8615.138865849744
+        }
+      },
+      "model_file": "saved_models/GRU_patient_540.pth"
+    }
+  },
+  "544": {
+    "RNN": {
+      "mae": 86.70304870605469,
+      "rmse": 102.11940002441406,
+      "mard": 49.61888122558594,
+      "tir": 68.15556411243743,
+      "tir_pred": 50.0,
+      "tbr": 0.9048902579899885,
+      "tbr_pred": 50.0,
+      "tar": 30.939545629572585,
+      "tar_pred": 0.0,
+      "clarke_zones": {
+        "A": 9.3697856501091,
+        "B": 71.66602490052625,
+        "C": 0.0,
+        "D": 3.215248363496342,
+        "E": 15.74894108586831
+      },
+      "parkes_zones": {
+        "A": 11.147477859068156,
+        "B": 55.78231292517006,
+        "C": 33.012450263124116,
+        "D": 0.05775895263765884,
+        "E": 0.0
+      },
+      "model_info": {
+        "model_name": "RNN_patient_544",
+        "model_type": "RNNBGModel",
+        "patient_id": 544,
+        "sequence_length": 12,
+        "prediction_horizon": 6,
+        "feature_dim": 4,
+        "hyperparameters": {
+          "hidden_size": 64,
+          "num_layers": 2,
+          "dropout": 0.2,
+          "learning_rate": 0.001,
+          "nonlinearity": "tanh"
+        }
+      },
+      "predictions_file": "results/RNN_patient_544_predictions.csv",
+      "training_history": {
+        "epochs_completed": 3,
+        "best_val_loss": 12735.877516526441,
+        "pretrain_epochs": 2,
+        "finetune_epochs": 1,
+        "pretrain_history": {
+          "train_losses": [
+            19196.97728126748,
+            13236.43330755383
+          ],
+          "val_losses": [
+            22086.64412560096,
+            15980.346649639423
+          ],
+          "epochs_completed": 2,
+          "best_val_loss": 15980.346649639423
+        },
+        "finetune_history": {
+          "train_losses": [
+            14357.658773103112
+          ],
+          "val_losses": [
+            12735.877516526441
+          ],
+          "epochs_completed": 1,
+          "best_val_loss": 12735.877516526441
+        }
+      },
+      "model_file": "saved_models/RNN_patient_544.pth"
+    },
+    "LSTM": {
+      "mae": 85.13528442382812,
+      "rmse": 100.76013946533203,
+      "mard": 48.515987396240234,
+      "tir": 68.15556411243743,
+      "tir_pred": 100.0,
+      "tbr": 0.9048902579899885,
+      "tbr_pred": 0.0,
+      "tar": 30.939545629572585,
+      "tar_pred": 0.0,
+      "clarke_zones": {
+        "A": 10.178410987036324,
+        "B": 83.39109228597098,
+        "C": 0.0,
+        "D": 6.430496726992684,
+        "E": 0.0
+      },
+      "parkes_zones": {
+        "A": 11.571043511744321,
+        "B": 56.3406494673341,
+        "C": 32.06905403670902,
+        "D": 0.019252984212552945,
+        "E": 0.0
+      },
+      "model_info": {
+        "model_name": "LSTM_patient_544",
+        "model_type": "LSTMBGModel",
+        "patient_id": 544,
+        "sequence_length": 12,
+        "prediction_horizon": 6,
+        "feature_dim": 4,
+        "hyperparameters": {
+          "hidden_size": 64,
+          "num_layers": 2,
+          "dropout": 0.2,
+          "learning_rate": 0.001
+        }
+      },
+      "predictions_file": "results/LSTM_patient_544_predictions.csv",
+      "training_history": {
+        "epochs_completed": 3,
+        "best_val_loss": 12432.131325120192,
+        "pretrain_epochs": 2,
+        "finetune_epochs": 1,
+        "pretrain_history": {
+          "train_losses": [
+            19101.334451901566,
+            12966.668315571693
+          ],
+          "val_losses": [
+            21790.984825721152,
+            15658.627403846154
+          ],
+          "epochs_completed": 2,
+          "best_val_loss": 15658.627403846154
+        },
+        "finetune_history": {
+          "train_losses": [
+            14016.795820540492
+          ],
+          "val_losses": [
+            12432.131325120192
+          ],
+          "epochs_completed": 1,
+          "best_val_loss": 12432.131325120192
+        }
+      },
+      "model_file": "saved_models/LSTM_patient_544.pth"
+    },
+    "GRU": {
+      "mae": 86.10226440429688,
+      "rmse": 101.59841918945312,
+      "mard": 49.19443130493164,
+      "tir": 68.15556411243743,
+      "tir_pred": 100.0,
+      "tbr": 0.9048902579899885,
+      "tbr_pred": 0.0,
+      "tar": 30.939545629572585,
+      "tar_pred": 0.0,
+      "clarke_zones": {
+        "A": 9.806186625593634,
+        "B": 83.76331664741367,
+        "C": 0.0,
+        "D": 6.430496726992684,
+        "E": 0.0
+      },
+      "parkes_zones": {
+        "A": 11.224489795918368,
+        "B": 55.91066615325375,
+        "C": 32.82633808240277,
+        "D": 0.03850596842510589,
+        "E": 0.0
+      },
+      "model_info": {
+        "model_name": "GRU_patient_544",
+        "model_type": "GRUBGModel",
+        "patient_id": 544,
+        "sequence_length": 12,
+        "prediction_horizon": 6,
+        "feature_dim": 4,
+        "hyperparameters": {
+          "hidden_size": 64,
+          "num_layers": 2,
+          "dropout": 0.2,
+          "learning_rate": 0.001
+        }
+      },
+      "predictions_file": "results/GRU_patient_544_predictions.csv",
+      "training_history": {
+        "epochs_completed": 3,
+        "best_val_loss": 12618.978831129807,
+        "pretrain_epochs": 2,
+        "finetune_epochs": 1,
+        "pretrain_history": {
+          "train_losses": [
+            19147.803147283976,
+            13133.303562377656
+          ],
+          "val_losses": [
+            21976.01896033654,
+            15863.6521484375
+          ],
+          "epochs_completed": 2,
+          "best_val_loss": 15863.6521484375
+        },
+        "finetune_history": {
+          "train_losses": [
+            14203.811956620866
+          ],
+          "val_losses": [
+            12618.978831129807
+          ],
+          "epochs_completed": 1,
+          "best_val_loss": 12618.978831129807
+        }
+      },
+      "model_file": "saved_models/GRU_patient_544.pth"
+    }
+  }
+}

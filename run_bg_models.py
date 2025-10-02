@@ -1,35 +1,52 @@
+#!/usr/bin/env python3
 """
-Experiment runner for blood glucose forecasting benchmark.
+Comprehensive transfer learning training and evaluation script for blood glucose forecasting models.
 
-This module provides the main interface for running benchmark experiments
-with standardized configurations and reproducible results.
+This script demonstrates how to:
+1. Load and preprocess OhioT1DM data
+2. Create PyTorch datasets for transfer learning
+3. Train different RNN models (RNN, LSTM, GRU) using transfer learning approach
+4. Pre-train models on global dataset (all other patients)
+5. Fine-tune models on target patient data
+6. Evaluate models with comprehensive BG-specific metrics
+7. Compare model performance across patients
+8. Save results and trained models
+
+Transfer Learning Approach:
+- Pre-training phase: Models learn from data of all other patients
+- Fine-tuning phase: Models adapt to specific target patient
+- Improved performance through knowledge transfer
 """
 
 import sys
-import warnings
-import argparse
-import json
-import pandas as pd
-import numpy as np
-import torch
+import os
 from pathlib import Path
-from datetime import datetime
+import numpy as np
+import pandas as pd
+import torch
 from torch.utils.data import DataLoader
-import torch.utils.data
-
-# Add benchmark to path
-sys.path.append(str(Path(__file__).parent.parent))
-
-# Import benchmark modules
-from data.loaders import load_ohiot1dm_data
-from data.preprocessors import preprocess_ohiot1dm_data
-from data.torch_dataset import prepare_multi_patient_dataset
-from models.rnn import RNNBGModel, LSTMBGModel, GRUBGModel
-from evaluation.evaluator import BGEvaluator
-from .tracking import ExperimentTracker
-
+import json
+import argparse
+from datetime import datetime
+import warnings
+from typing import List
 warnings.filterwarnings('ignore')
 
+# Add benchmark to path
+sys.path.append('benchmark')
+
+# Import our modules
+try:
+    from data.loaders import load_ohiot1dm_data
+    from data.preprocessors import preprocess_ohiot1dm_data
+    from data.torch_dataset import prepare_patient_datasets, prepare_multi_patient_dataset
+    from models.rnn import RNNBGModel, LSTMBGModel, GRUBGModel
+    from evaluation.evaluator import BGEvaluator
+    print("✓ All modules imported successfully")
+except ImportError as e:
+    print(f"✗ Import error: {e}")
+    print("Make sure you're running from the project root directory")
+    sys.exit(1)
 
 class BGForecastingDataset:
     """
@@ -45,7 +62,6 @@ class BGForecastingDataset:
         sequence = self.ohio_dataset[idx]
         target = self.ohio_dataset.get_target(idx)
         return sequence, target
-
 
 class BGConcatDataset:
     """
@@ -78,26 +94,26 @@ class BGConcatDataset:
         
         return sequence, target
 
-
-class ExperimentRunner:
+class BGModelTrainer:
     """
-    Main experiment runner for blood glucose forecasting benchmark.
+    Comprehensive trainer for blood glucose forecasting models.
     """
     
-    def __init__(self, config: dict):
+    def __init__(self, 
+                 data_dir: str = "data",
+                 results_dir: str = "results",
+                 models_dir: str = "saved_models"):
         """
-        Initialize the experiment runner.
+        Initialize the trainer.
         
         Args:
-            config: Experiment configuration dictionary
+            data_dir: Path to raw OhioT1DM data
+            results_dir: Directory to save results
+            models_dir: Directory to save trained models
         """
-        self.config = config
-        
-        # Extract paths from config
-        paths_config = config.get('paths', {})
-        self.data_dir = paths_config.get('data_root', 'data')
-        self.results_dir = Path(paths_config.get('results', 'results'))
-        self.models_dir = Path(paths_config.get('saved_models', 'saved_models'))
+        self.data_dir = data_dir
+        self.results_dir = Path(results_dir)
+        self.models_dir = Path(models_dir)
         
         # Create directories
         self.results_dir.mkdir(exist_ok=True)
@@ -105,13 +121,7 @@ class ExperimentRunner:
         
         # Initialize evaluator
         self.evaluator = BGEvaluator(
-            default_metrics=['mae', 'rmse', 'mard', 'tir', 'tbr', 'tar', 'clarke', 'parkes']
-        )
-        
-        # Initialize tracker
-        self.tracker = ExperimentTracker(
-            results_dir=self.results_dir,
-            config=self.config
+            default_metrics=['mae', 'rmse', 'mard', 'tir', 'tbr', 'tar', 'clarke', 'parkes'],
         )
         
         # Store results
@@ -119,13 +129,13 @@ class ExperimentRunner:
     
     def load_and_prepare_data(self, 
                              patient_ids: list = [540, 544, 552, 567, 584, 596],
-                             version: str = "2020",
+                             version: List[str] = ["2020"],
                              sequence_length: int = 12,
                              prediction_horizon: int = 6,
                              unimodal: bool = False,
                              batch_size: int = 32):
         """
-        Load and prepare data for all specified patients using either transfer learning or regular training.
+        Load and prepare data for all specified patients using transfer learning approach.
         
         Args:
             patient_ids: List of patient IDs to load
@@ -136,21 +146,16 @@ class ExperimentRunner:
             batch_size: Batch size for DataLoaders
             
         Returns:
-            Dictionary with patient data and DataLoaders
+            Dictionary with patient data and DataLoaders prepared for transfer learning
         """
         print(f"\n{'='*60}")
         print("LOADING AND PREPARING DATA")
         print(f"{'='*60}")
+        print("🔄 Using TRANSFER LEARNING approach")
         
-        # Check if transfer learning is enabled
-        transfer_learning_enabled = self.config.get('training', {}).get('transfer_learning', {}).get('enabled', True)
-        
-        if transfer_learning_enabled:
-            print("🔄 Using TRANSFER LEARNING approach")
-            return self._load_data_for_transfer_learning(patient_ids, version, sequence_length, prediction_horizon, unimodal, batch_size)
-        else:
-            print("🔄 Using REGULAR TRAINING approach")
-            return self._load_data_for_regular_training(patient_ids, version, sequence_length, prediction_horizon, unimodal, batch_size)
+        return self._load_data_for_transfer_learning(
+            patient_ids, version, sequence_length, prediction_horizon, unimodal, batch_size
+        )
     
     def _load_data_for_transfer_learning(self, patient_ids, version, sequence_length, prediction_horizon, unimodal, batch_size):
         """Load data for transfer learning approach."""
@@ -189,13 +194,11 @@ class ExperimentRunner:
                 processed_train = preprocess_ohiot1dm_data(
                     train_data,
                     include_feature_engineering=True,
-                    normalize=False
                 )
                 
                 processed_test = preprocess_ohiot1dm_data(
                     test_data,
                     include_feature_engineering=True,
-                    normalize=False
                 )
                 
                 all_patient_data[patient_id] = {
@@ -304,126 +307,6 @@ class ExperimentRunner:
         print(f"\n✓ Transfer learning data prepared for {len(patient_data)} patients")
         return patient_data
     
-    def _load_data_for_regular_training(self, patient_ids, version, sequence_length, prediction_horizon, unimodal, batch_size):
-        """Load data for regular training approach (no transfer learning)."""
-        # Track data loading parameters
-        self.tracker.log_data_params({
-            'patient_ids': patient_ids,
-            'version': version,
-            'sequence_length': sequence_length,
-            'prediction_horizon': prediction_horizon,
-            'unimodal': unimodal,
-            'batch_size': batch_size
-        })
-        
-        print(f"Loading data for {len(patient_ids)} patients for regular training...")
-        
-        # Step 1: Load and preprocess all patient data
-        all_patient_data = {}
-        
-        for patient_id in patient_ids:
-            print(f"\nProcessing patient {patient_id}...")
-            
-            try:
-                # Load raw data
-                train_data = load_ohiot1dm_data(
-                    data_dir=self.data_dir,
-                    patient_ids=[patient_id],
-                    mode='train',
-                    version=version
-                )
-                
-                test_data = load_ohiot1dm_data(
-                    data_dir=self.data_dir,
-                    patient_ids=[patient_id],
-                    mode='test',
-                    version=version
-                )
-                
-                # Preprocess data
-                processed_train = preprocess_ohiot1dm_data(
-                    train_data,
-                    include_feature_engineering=True,
-                    normalize=False
-                )
-                
-                processed_test = preprocess_ohiot1dm_data(
-                    test_data,
-                    include_feature_engineering=True,
-                    normalize=False
-                )
-                
-                all_patient_data[patient_id] = {
-                    'train': processed_train[patient_id],
-                    'test': processed_test[patient_id]
-                }
-                
-                print(f"✓ Patient {patient_id}: {len(processed_train[patient_id])} train, {len(processed_test[patient_id])} test samples")
-                
-            except Exception as e:
-                print(f"✗ Error processing patient {patient_id}: {e}")
-                continue
-        
-        # Step 2: Create datasets and dataloaders for each patient individually
-        patient_data = {}
-        
-        for patient_id in patient_ids:
-            if patient_id not in all_patient_data:
-                continue
-                
-            print(f"\n🎯 Preparing regular training datasets for patient {patient_id}...")
-            
-            # Prepare individual patient dataset (no global dataset for regular training)
-            train_dataset, test_dataset, feature_dim = prepare_multi_patient_dataset(
-                patient_data={patient_id: all_patient_data[patient_id]},
-                target_patient_id=patient_id,
-                sequence_length=sequence_length,
-                prediction_horizon=prediction_horizon,
-                unimodal=unimodal
-            )
-            
-            # Create data loaders
-            # Use a portion of train data for validation
-            if len(train_dataset) == 0:
-                print(f"✗ No training data available for patient {patient_id}")
-                continue
-                
-            val_size = max(1, len(train_dataset) // 5)  # At least 1 sample for validation
-            train_size = len(train_dataset) - val_size
-            
-            if train_size <= 0:
-                print(f"✗ Insufficient training data for patient {patient_id}")
-                continue
-                
-            train_split, val_split = torch.utils.data.random_split(train_dataset, [train_size, val_size])
-            
-            train_loader = DataLoader(train_split, batch_size=batch_size, shuffle=True)
-            val_loader = DataLoader(val_split, batch_size=batch_size, shuffle=False)
-            test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
-            
-            patient_data[patient_id] = {
-                'train_loader': train_loader,
-                'val_loader': val_loader,
-                'test_loader': test_loader,
-                'feature_dim': feature_dim,
-                'train_size': len(train_split),
-                'val_size': len(val_split),
-                'test_size': len(test_dataset)
-            }
-            
-            print(f"✓ Regular training setup for patient {patient_id}:")
-            print(f"  Train: {len(train_split)} sequences")
-            print(f"  Validation: {len(val_split)} sequences")
-            print(f"  Test: {len(test_dataset)} sequences")
-        
-        self.patient_data = patient_data
-        self.sequence_length = sequence_length
-        self.prediction_horizon = prediction_horizon
-        self.unimodal = unimodal
-        
-        print(f"\n✓ Regular training data prepared for {len(patient_data)} patients")
-        return patient_data
-    
     def train_model(self, 
                    model_class,
                    model_name: str,
@@ -433,7 +316,7 @@ class ExperimentRunner:
                    pretrain_epochs: int = 50,
                    finetune_epochs: int = 25):
         """
-        Train a model using either transfer learning or regular training based on configuration.
+        Train a model using transfer learning approach.
         
         Args:
             model_class: Model class (RNNBGModel, LSTMBGModel, GRUBGModel)
@@ -461,68 +344,45 @@ class ExperimentRunner:
             hyperparameters=hyperparameters
         )
         
-        # Check if transfer learning is enabled
-        transfer_learning_enabled = self.config.get('training', {}).get('transfer_learning', {}).get('enabled', True)
+        print(f"\n🔄 Training {model_name} with TRANSFER LEARNING on patient {patient_id}...")
+        print(f"Model: {model}")
         
-        if transfer_learning_enabled and pretrain_epochs > 0:
-            # Transfer learning approach
-            print(f"\n🔄 Training {model_name} with TRANSFER LEARNING on patient {patient_id}...")
-            self.tracker.log_training_start(model_name, patient_id, hyperparameters)
-            
-            # Phase 1: Pre-training on global dataset
-            print(f"📚 Pre-training on global dataset ({len(data['global_loader'].dataset)} sequences)...")
-            pretrain_history = model.fit(
-                train_loader=data['global_loader'],
-                validation_loader=data['val_loader'],  # Use target patient validation
-                epochs=pretrain_epochs,
-                early_stopping_patience=early_stopping_patience
-            )
-            
-            # Phase 2: Fine-tuning on target patient data
-            print(f"🎯 Fine-tuning on target patient data ({len(data['train_loader'].dataset)} sequences)...")
-            finetune_history = model.fit(
-                train_loader=data['train_loader'],
-                validation_loader=data['val_loader'],
-                epochs=finetune_epochs,
-                early_stopping_patience=early_stopping_patience
-            )
-            
-            # Combine training histories
-            total_epochs = pretrain_history['epochs_completed'] + finetune_history['epochs_completed']
-            history = {
-                'epochs_completed': total_epochs,
-                'final_val_loss': finetune_history['final_val_loss'],
-                'pretrain_epochs': pretrain_history['epochs_completed'],
-                'finetune_epochs': finetune_history['epochs_completed'],
-                'pretrain_history': pretrain_history,
-                'finetune_history': finetune_history
-            }
-            
-            print(f"✓ Transfer learning completed:")
-            print(f"  Pre-training: {pretrain_history['epochs_completed']} epochs")
-            print(f"  Fine-tuning: {finetune_history['epochs_completed']} epochs")
-            print(f"  Final validation loss: {finetune_history['final_val_loss']:.6f}")
-            
-        else:
-            # Regular training (no transfer learning)
-            total_epochs = finetune_epochs if finetune_epochs > 0 else pretrain_epochs
-            print(f"\n🔄 Training {model_name} with REGULAR TRAINING on patient {patient_id}...")
-            print(f"📚 Training on patient data ({len(data['train_loader'].dataset)} sequences) for {total_epochs} epochs...")
-            self.tracker.log_training_start(model_name, patient_id, hyperparameters)
-            
-            # Single-phase training on target patient data
-            history = model.fit(
-                train_loader=data['train_loader'],
-                validation_loader=data['val_loader'],
-                epochs=total_epochs,
-                early_stopping_patience=early_stopping_patience
-            )
-            
-            print(f"✓ Regular training completed:")
-            print(f"  Training: {history['epochs_completed']} epochs")
-            print(f"  Final validation loss: {history['final_val_loss']:.6f}")
+        # Step 1: Pre-train on global data (all other patients)
+        print(f"📚 Pre-training on global dataset ({data['global_dataset_size']} sequences)...")
+        pretrain_history = model.fit(
+            train_loader=data['global_loader'],
+            validation_loader=data['val_loader'],  # Use target patient validation
+            epochs=pretrain_epochs,
+            learning_rate=hyperparameters.get('learning_rate', 0.001),
+            early_stopping_patience=early_stopping_patience
+        )
         
-        self.tracker.log_training_completion(model_name, patient_id, history)
+        # Step 2: Fine-tune on target patient data
+        print(f"🎯 Fine-tuning on target patient data ({data['target_train_size']} sequences)...")
+        finetune_history = model.fit(
+            train_loader=data['train_loader'],
+            validation_loader=data['val_loader'],
+            epochs=finetune_epochs,
+            learning_rate=hyperparameters.get('learning_rate', 0.001) * 0.1,  # Lower learning rate for fine-tuning
+            early_stopping_patience=early_stopping_patience // 2  # Less patience for fine-tuning
+        )
+        
+        # Combine histories
+        total_epochs = pretrain_history['epochs_completed'] + finetune_history['epochs_completed']
+        history = {
+            'epochs_completed': total_epochs,
+            'best_val_loss': finetune_history['best_val_loss'],
+            'pretrain_epochs': pretrain_history['epochs_completed'],
+            'finetune_epochs': finetune_history['epochs_completed'],
+            'pretrain_history': pretrain_history,
+            'finetune_history': finetune_history
+        }
+        
+        print(f"✓ Transfer learning completed:")
+        print(f"  Pre-training: {pretrain_history['epochs_completed']} epochs")
+        print(f"  Fine-tuning: {finetune_history['epochs_completed']} epochs")
+        print(f"  Final validation loss: {finetune_history['best_val_loss']:.6f}")
+        
         return model, history
     
     def evaluate_model(self, model, patient_id: int, save_predictions: bool = True):
@@ -601,52 +461,22 @@ class ExperimentRunner:
             pred_df.to_csv(pred_file, index=False)
             results['predictions_file'] = str(pred_file)
         
-        # Track evaluation results
-        self.tracker.log_evaluation_results(model.model_name, patient_id, results)
-        
         return results
     
-    def run_experiment(self, 
-                      patient_ids: list = None,
-                      hyperparameters: dict = None,
-                      pretrain_epochs: int = None,
-                      finetune_epochs: int = None,
-                      **data_params):
+    def run_model_comparison(self, 
+                           patient_ids: list = [540, 544],
+                           hyperparameters: dict = None,
+                           pretrain_epochs: int = 50,
+                           finetune_epochs: int = 25):
         """
-        Run complete experiment with multiple models and patients.
+        Run comprehensive model comparison across multiple patients using transfer learning.
         
         Args:
             patient_ids: List of patient IDs to test on
             hyperparameters: Dictionary of hyperparameters for each model type
             pretrain_epochs: Number of pre-training epochs
             finetune_epochs: Number of fine-tuning epochs
-            **data_params: Additional data loading parameters
         """
-        # Start experiment tracking
-        self.tracker.start_experiment()
-        
-        # Get configuration values
-        training_config = self.config.get('training', {})
-        data_config = self.config.get('data', {})
-        
-        # Use config values if not provided as arguments
-        if patient_ids is None:
-            patient_ids = data_config.get('patient_ids', [540, 544])
-        
-        if pretrain_epochs is None:
-            # Check if transfer learning is enabled
-            if training_config.get('transfer_learning', {}).get('enabled', True):
-                pretrain_epochs = training_config.get('epochs', 50)
-            else:
-                pretrain_epochs = 0  # No pre-training if transfer learning disabled
-        
-        if finetune_epochs is None:
-            # Check if transfer learning is enabled
-            if training_config.get('transfer_learning', {}).get('enabled', True):
-                finetune_epochs = training_config.get('transfer_learning', {}).get('fine_tune_epochs', 25)
-            else:
-                finetune_epochs = training_config.get('epochs', 50)  # Use full epochs for regular training
-        
         if hyperparameters is None:
             hyperparameters = {
                 'RNN': {
@@ -681,21 +511,9 @@ class ExperimentRunner:
         print(f"{'='*60}")
         print(f"Models: {list(model_classes.keys())}")
         print(f"Patients: {patient_ids}")
-        
-        # Determine and display the training approach
-        transfer_learning_enabled = training_config.get('transfer_learning', {}).get('enabled', True)
-        if transfer_learning_enabled and pretrain_epochs > 0:
-            print(f"Approach: Transfer Learning")
-            print(f"Pre-train epochs: {pretrain_epochs}")
-            print(f"Fine-tune epochs: {finetune_epochs}")
-        else:
-            total_epochs = finetune_epochs if finetune_epochs > 0 else pretrain_epochs
-            print(f"Approach: Regular Training")
-            print(f"Training epochs: {total_epochs}")
-            print(f"Transfer learning: Disabled")
-        
-        # Load data
-        self.load_and_prepare_data(patient_ids=patient_ids, **data_params)
+        print(f"Approach: Transfer Learning")
+        print(f"Pre-train epochs: {pretrain_epochs}")
+        print(f"Fine-tune epochs: {finetune_epochs}")
         
         comparison_results = {}
         
@@ -735,15 +553,17 @@ class ExperimentRunner:
                     
                     patient_results[model_name] = results
                     
+                    # Print results
                     print(f"\n{model_name} Results:")
                     print(f"  MAE: {results['mae']:.3f} mg/dL")
                     print(f"  RMSE: {results['rmse']:.3f} mg/dL")
                     print(f"  MARD: {results['mard']:.2f}%")
                     print(f"  TIR: {results['tir']:.1f}%")
                     print(f"  Clarke A+B: {results['clarke_zones']['A'] + results['clarke_zones']['B']:.1f}%")
-                    
+                    print(f"  Parkes A+B: {results['parkes_zones']['A'] + results['parkes_zones']['B']:.1f}%")
+
                 except Exception as e:
-                    print(f"❌ Error training {model_name} for patient {patient_id}: {e}")
+                    print(f"✗ Error with {model_name}: {e}")
                     continue
             
             comparison_results[patient_id] = patient_results
@@ -759,9 +579,6 @@ class ExperimentRunner:
             json.dump(json_results, f, indent=2)
         
         print(f"\n✓ Results saved to {results_file}")
-        
-        # End experiment tracking
-        self.tracker.end_experiment(comparison_results)
         
         return comparison_results
     
@@ -842,21 +659,101 @@ class ExperimentRunner:
         print(f"   MAE: {best_model['mae']:.2f} mg/dL")
         print(f"   MARD: {best_model['mard']:.1f}%")
         print(f"   TIR: {best_model['tir']:.1f}%")
+        
+    def debug_dataset(self, patient_id: int):
+        """Debug dataset to check for shape issues."""
+        if patient_id not in self.patient_data:
+            print(f"Patient {patient_id} not loaded")
+            return
+        
+        data = self.patient_data[patient_id]
+        train_dataset = data['train_dataset']
+        
+        print(f"\nDebugging dataset for patient {patient_id}...")
+        
+        # Check first 10 samples
+        empty_targets = 0
+        valid_targets = 0
+        
+        for i in range(min(100, len(train_dataset))):
+            try:
+                sequence = train_dataset[i]
+                target = train_dataset.get_target(i)
+                
+                if target is None or len(target) == 0:
+                    empty_targets += 1
+                else:
+                    valid_targets += 1
+                    
+                if i < 5:  # Print first 5 for inspection
+                    print(f"Sample {i}: seq_shape={sequence.shape}, target_shape={target.shape if target is not None else 'None'}")
+                    
+            except Exception as e:
+                print(f"Error at index {i}: {e}")
+        
+        print(f"Found {valid_targets} valid targets, {empty_targets} empty targets")
+        return valid_targets, empty_targets
 
 
-def run_experiment_from_config(config_path: str = None, **kwargs):
-    """
-    Run experiment from configuration file or parameters.
+def main():
+    """Main function to run the experiment."""
+    parser = argparse.ArgumentParser(description="Train and evaluate BG forecasting models")
+    parser.add_argument("--data-dir", default="data", help="Path to data directory")
+    parser.add_argument("--results-dir", default="results", help="Results directory")
+    parser.add_argument("--models-dir", default="saved_models", help="Models directory")
+    parser.add_argument("--patients", nargs="+", type=int, default=[540, 544,552,567,584,596], help="Patient IDs to use (minimum 2 required for transfer learning)")
+    parser.add_argument("--sequence-length", type=int, default=12, help="Input sequence length")
+    parser.add_argument("--prediction-horizon", type=int, default=6, help="Prediction horizon")
+    parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
+    parser.add_argument("--unimodal", action="store_true", help="Use only glucose features")
+    parser.add_argument("--version", default="2020", choices=["2018", "2020"], help="Dataset version")
+    parser.add_argument("--pretrain-epochs", type=int, default=50, help="Pre-training epochs")
+    parser.add_argument("--finetune-epochs", type=int, default=25, help="Fine-tuning epochs")
     
-    Args:
-        config_path: Path to YAML configuration file
-        **kwargs: Direct experiment parameters
-    """
-    if config_path:
-        # TODO: Load config from YAML file
-        config = {}
-    else:
-        config = kwargs
+    args = parser.parse_args()
     
-    runner = ExperimentRunner(config=config)
-    return runner.run_experiment(**config)
+    # Initialize trainer
+    trainer = BGModelTrainer(
+        data_dir=args.data_dir,
+        results_dir=args.results_dir,
+        models_dir=args.models_dir
+    )
+    
+    try:
+        # Load and prepare data
+        trainer.load_and_prepare_data(
+            patient_ids=args.patients,
+            version=args.version,
+            sequence_length=args.sequence_length,
+            prediction_horizon=args.prediction_horizon,
+            unimodal=args.unimodal,
+            batch_size=args.batch_size
+        )
+        
+        # Run model comparison
+        trainer.run_model_comparison(
+            patient_ids=args.patients,
+            pretrain_epochs=args.pretrain_epochs,
+            finetune_epochs=args.finetune_epochs
+        )
+        
+        # Print summary
+        trainer.print_summary()
+        
+        print(f"\n{'='*60}")
+        print("EXPERIMENT COMPLETED SUCCESSFULLY!")
+        print(f"{'='*60}")
+        print(f"Results saved in: {trainer.results_dir}")
+        print(f"Models saved in: {trainer.models_dir}")
+        
+    except Exception as e:
+        print(f"\n❌ Error during experiment: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+    
+    return 0
+
+
+if __name__ == "__main__":
+    exit(main())

@@ -1,53 +1,78 @@
-# Default configuration template for blood glucose forecasting benchmark
-# Copy and modify this file for your experiments
-
-experiment:
-  name: "default_experiment"
-  description: "Default configuration template"
-  author: "Beatriz Fulgencio"
-  date: "2025-09-09"
-
 data:
-  dataset: "ohiot1dm"
-  subjects: "all"
-  split_strategy: "temporal" # Temporal split for time series data
-  train_ratio: 0.8
-  val_ratio: 0.20
-  test_ratio: 1.0 # 100% of the test data for testing
-
-preprocessing: #TODO
-  imputation_method: "linear" # Linear interpolation for missing values 
-  outlier_threshold: 3.0
-  normalization: "standardize"
-  window_size: 12
-  prediction_horizon: 6 # 6 time steps (30 minutes)
-  sampling_rate: 5 # 5 minutes
-
-model:
-  type: "lstm"
-  architecture:
-    hidden_size: 64
-    num_layers: 2
-    dropout: 0.2
-  hyperparameters:
-    learning_rate: 0.001
-    batch_size: 32
-    epochs: 100
-    early_stopping_patience: 10
-
+  batch_size: 32
+  dataset: ohiot1dm
+  patient_ids:
+  - 540
+  - 544
+  - 552
+  - 567
+  - 584
+  - 596
+  prediction_horizon: 6
+  preprocessing:
+    interpolate_missing: true
+  sequence_length: 12
+  version: '2018'
 evaluation:
-  metrics:
-    - "mae"
-    - "rmse"
-    - "mape"
-    - "clarke_ega"
   cross_validation:
     enabled: false
     folds: 5
-    strategy: "time_series"
-    
-output:
-  save_model: true
-  save_predictions: true
-  generate_plots: true
-  export_format: ["csv", "json"]
+  metrics:
+  - mae
+  - rmse
+  - mard
+  - tir
+  - clarke_error_grid
+  - parkes_error_grid
+experiment:
+  description: Default benchmarking experiment
+  name: default_experiment
+  tags: []
+  tracking:
+    enabled: true
+    save_models: true
+    save_predictions: true
+models:
+  gru:
+    dropout: 0.2
+    hidden_size: 64
+    num_layers: 2
+  lstm:
+    dropout: 0.2
+    hidden_size: 64
+    num_layers: 2
+  rnn:
+    dropout: 0.2
+    hidden_size: 64
+    num_layers: 2
+paths:
+  data_root: data
+  logs: logs
+  processed_data: processed_data
+  results: results
+  saved_models: saved_models
+system:
+  device: auto
+  num_workers: 4
+  precision: float32
+  random_seed: 42
+training:
+  early_stopping:
+    min_delta: 0.001
+    patience: 10
+  epochs: 50
+  learning_rate: 0.001
+  transfer_learning:
+    enabled: true
+    fine_tune_epochs: 25
+    freeze_layers:
+    - embedding
+    source_patients:
+    - 540
+    - 544
+    target_patients:
+    - 552
+    - 567
+    - 584
+    - 596
+  weight_decay: 1.0e-05

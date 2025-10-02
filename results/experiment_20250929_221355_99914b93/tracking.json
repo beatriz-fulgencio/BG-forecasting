@@ -1,0 +1,29 @@
+{
+  "experiment_id": "20250929_221355_99914b93",
+  "start_time": "2025-09-29T22:13:55.110913",
+  "end_time": "2025-09-29T22:13:55.111525",
+  "config": {},
+  "environment": {
+    "timestamp": "2025-09-29T22:13:55.021099",
+    "python_version": "3.13.5 | packaged by conda-forge | (main, Jun 16 2025, 08:24:05) [Clang 18.1.8 ]",
+    "git_commit": "d1bef437291f67f30890cc9a003e98a54c50d988",
+    "git_branch": "retrain",
+    "working_directory": "/Users/beatrizfcmenezes/Documents/GitHub/BG-forecasting"
+  },
+  "data_params": {
+    "patient_ids": [
+      540.0,
+      544.0
+    ],
+    "version": "2020",
+    "sequence_length": 12.0,
+    "prediction_horizon": 6.0,
+    "unimodal": 0.0,
+    "batch_size": 32.0
+  },
+  "models": {},
+  "results": {},
+  "status": "completed",
+  "final_results": {},
+  "duration_seconds": 0.000612
+}

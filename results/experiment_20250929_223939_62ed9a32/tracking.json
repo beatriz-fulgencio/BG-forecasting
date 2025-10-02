@@ -1,0 +1,115 @@
+{
+  "experiment_id": "20250929_223939_62ed9a32",
+  "start_time": "2025-09-29T22:39:39.346044",
+  "end_time": null,
+  "config": {
+    "data": {
+      "batch_size": 32.0,
+      "dataset": "ohiot1dm",
+      "patient_ids": [
+        540.0,
+        544.0
+      ],
+      "prediction_horizon": 6.0,
+      "preprocessing": {
+        "interpolate_missing": 1.0,
+        "normalize": 1.0,
+        "remove_outliers": 1.0
+      },
+      "sequence_length": 12.0,
+      "version": "2018"
+    },
+    "evaluation": {
+      "cross_validation": {
+        "enabled": 0.0,
+        "folds": 5.0
+      },
+      "metrics": [
+        "mae",
+        "rmse",
+        "mard",
+        "tir",
+        "clarke_error_grid",
+        "parkes_error_grid"
+      ]
+    },
+    "experiment": {
+      "description": "Default benchmarking experiment",
+      "name": "default_experiment",
+      "tags": [],
+      "tracking": {
+        "enabled": 1.0,
+        "save_models": 1.0,
+        "save_predictions": 1.0
+      }
+    },
+    "models": {
+      "gru": {
+        "dropout": 0.2,
+        "hidden_size": 64.0,
+        "num_layers": 2.0
+      },
+      "lstm": {
+        "dropout": 0.2,
+        "hidden_size": 64.0,
+        "num_layers": 2.0
+      },
+      "rnn": {
+        "dropout": 0.2,
+        "hidden_size": 64.0,
+        "num_layers": 2.0
+      }
+    },
+    "paths": {
+      "data_root": "data",
+      "logs": "logs",
+      "processed_data": "processed_data",
+      "results": "results",
+      "saved_models": "saved_models"
+    },
+    "system": {
+      "device": "auto",
+      "num_workers": 4.0,
+      "precision": "float32",
+      "random_seed": 42.0
+    },
+    "training": {
+      "early_stopping": {
+        "min_delta": 0.001,
+        "patience": 10.0
+      },
+      "epochs": 3.0,
+      "learning_rate": 0.001,
+      "transfer_learning": {
+        "enabled": 1.0,
+        "fine_tune_epochs": 20.0,
+        "freeze_layers": [
+          "embedding"
+        ],
+        "source_patients": [
+          540.0,
+          544.0
+        ],
+        "target_patients": [
+          552.0,
+          567.0,
+          584.0,
+          596.0
+        ],
+        "fine_tuning_epochs": 1.0
+      },
+      "weight_decay": 1e-05
+    }
+  },
+  "environment": {
+    "timestamp": "2025-09-29T22:39:39.308794",
+    "python_version": "3.13.5 | packaged by conda-forge | (main, Jun 16 2025, 08:24:05) [Clang 18.1.8 ]",
+    "git_commit": "d1bef437291f67f30890cc9a003e98a54c50d988",
+    "git_branch": "retrain",
+    "working_directory": "/Users/beatrizfcmenezes/Documents/GitHub/BG-forecasting"
+  },
+  "data_params": {},
+  "models": {},
+  "results": {},
+  "status": "running"
+}

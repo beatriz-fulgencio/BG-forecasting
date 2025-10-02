@@ -1,0 +1,71 @@
+{
+  "RNN": {
+    "metrics": {
+      "mae": 111.19473266601562,
+      "rmse": 111.1990966796875,
+      "mard": 89.06548309326172,
+      "tir": 100.0,
+      "tir_pred": 0.0,
+      "tbr": 0.0,
+      "tbr_pred": 100.0,
+      "tar": 0.0,
+      "tar_pred": 0.0,
+      "clarke_zones": {
+        "A": 0.0,
+        "B": 100.0,
+        "C": 0.0,
+        "D": 0.0,
+        "E": 0.0
+      }
+    },
+    "training_epochs": 15,
+    "final_train_loss": 12484.322310014204,
+    "final_val_loss": 12432.537388392857
+  },
+  "LSTM": {
+    "metrics": {
+      "mae": 110.7153549194336,
+      "rmse": 110.71974182128906,
+      "mard": 88.68146514892578,
+      "tir": 100.0,
+      "tir_pred": 0.0,
+      "tbr": 0.0,
+      "tbr_pred": 100.0,
+      "tar": 0.0,
+      "tar_pred": 0.0,
+      "clarke_zones": {
+        "A": 0.0,
+        "B": 100.0,
+        "C": 0.0,
+        "D": 0.0,
+        "E": 0.0
+      }
+    },
+    "training_epochs": 15,
+    "final_train_loss": 12373.51717862216,
+    "final_val_loss": 12328.93833705357
+  },
+  "GRU": {
+    "metrics": {
+      "mae": 110.97364044189453,
+      "rmse": 110.9780044555664,
+      "mard": 88.88837432861328,
+      "tir": 100.0,
+      "tir_pred": 0.0,
+      "tbr": 0.0,
+      "tbr_pred": 100.0,
+      "tar": 0.0,
+      "tar_pred": 0.0,
+      "clarke_zones": {
+        "A": 0.0,
+        "B": 100.0,
+        "C": 0.0,
+        "D": 0.0,
+        "E": 0.0
+      }
+    },
+    "training_epochs": 15,
+    "final_train_loss": 12430.39883700284,
+    "final_val_loss": 12383.282924107143
+  }
+}
