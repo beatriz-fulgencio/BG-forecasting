@@ -17,7 +17,7 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy as np
 
 try:
-    import pandas as pd
+    import pandas as pd #type:ignore
     PANDAS_AVAILABLE = True
 except ImportError:
     PANDAS_AVAILABLE = False
@@ -868,6 +868,4 @@ def generate_latex_report(model_metrics: Dict[str, Dict[str, Union[float, Dict]]
     with open(latex_filepath, 'w') as f:
         f.write('\n'.join(latex_content))
         
-    
-    
     return latex_filepath
