@@ -160,8 +160,8 @@ class BGMetrics:
         above_range = glucose_values > threshold
         return np.mean(above_range) * 100
     
-    
-    def comparing_time_in_range(glucose_values: np.ndarray, reference_values: np.ndarray) -> float:
+    @staticmethod
+    def comparing_time_in_range(glucose_values: np.ndarray, reference_values: np.ndarray) -> Dict[str, float]:
         """
         Compare Time in Range (TIR) metrics between predicted and reference glucose values.
 

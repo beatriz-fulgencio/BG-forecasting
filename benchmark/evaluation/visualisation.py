@@ -207,6 +207,7 @@ def create_prediction_dashboard(y_true: np.ndarray,
                                y_pred: np.ndarray,
                                timestamps: Optional[np.ndarray] = None,
                                metrics: Optional[Dict[str, Union[float, Dict]]] = None,
+                               title: Optional[str] = None,
                                patient_id: Optional[str] = None,
                                diabetes_type: int = 1,
                                figsize: Tuple[int, int] = (16, 12),
@@ -237,6 +238,7 @@ def create_prediction_dashboard(y_true: np.ndarray,
     
     # Create figure with subplots
     fig = plt.figure(figsize=figsize)
+    fig.suptitle(title if title is not None else "Blood Glucose Prediction Dashboard", fontsize=16, fontweight='bold')
     gs = GridSpec(3, 3, figure=fig, height_ratios=[1, 1, 1], width_ratios=[2, 1, 1])
     
     # Time series plot (top row, spanning 2 columns)

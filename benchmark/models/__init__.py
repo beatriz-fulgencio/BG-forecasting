@@ -9,13 +9,15 @@ Main Components:
 - rnn: Recurrent neural network implementations (LSTM, GRU)
 
 Example Usage:
-    from benchmark.models import LSTMGlucoseModel
+    from benchmark.models import LSTMBGModel
     
     # Create model
-    model = LSTMGlucoseModel(
+    model = LSTMBGModel(
+        model_name="lstm_patient_540",
         sequence_length=12,
         prediction_horizon=6,
-        feature_dim=5
+        feature_dim=5,
+        hyperparameters={'hidden_size': 64, 'num_layers': 2}
     )
     
     # Train model
@@ -32,8 +34,9 @@ try:
         BasePyTorchBGModel
     )
     from .rnn import (
-        LSTMGlucoseModel,
-        GRUGlucoseModel
+        RNNBGModel,
+        LSTMBGModel,
+        GRUBGModel
     )
     
     __all__ = [
@@ -41,8 +44,9 @@ try:
         'BaseBGModel',
         'BasePyTorchBGModel',
         # RNN models
-        'LSTMGlucoseModel',
-        'GRUGlucoseModel'
+        'RNNBGModel',
+        'LSTMBGModel',
+        'GRUBGModel'
     ]
     
 except ImportError as e:
