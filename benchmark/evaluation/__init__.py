@@ -30,22 +30,17 @@ Example Usage:
 # Import main classes and functions for easy access
 try:
     from .evaluator import (
-        BGEvaluator,
-        evaluate_model
+        BGEvaluator
     )
     from .metrics import (
         BGMetrics
     )
     from .reporting import (
-        generate_evaluation_report,
         export_metrics_to_csv,
         export_metrics_to_json,
-        generate_model_comparison_report,
-        generate_patient_comparison_report,
-        aggregate_patient_metrics
+        generate_latex_report
     )
     from .visualisation import (
-        plot_predictions,
         plot_clarke_analysis,
         plot_parkes_analysis,
         create_prediction_dashboard
@@ -68,17 +63,11 @@ try:
         # Main classes
         'BGEvaluator',
         'BGMetrics',
-        # Evaluator functions
-        'evaluate_model',
         # Reporting functions
-        'generate_evaluation_report',
         'export_metrics_to_csv',
         'export_metrics_to_json', 
-        'generate_model_comparison_report',
-        'generate_patient_comparison_report',
-        'aggregate_patient_metrics',
+        'generate_latex_report',
         # Visualization functions
-        'plot_predictions',
         'plot_clarke_analysis',
         'plot_parkes_analysis',
         'create_prediction_dashboard'

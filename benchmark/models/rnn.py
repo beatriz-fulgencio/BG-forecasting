@@ -11,7 +11,7 @@ Implementations of neural network approaches including:
 
 import numpy as np
 from typing import Dict, Any, Optional, Union, Tuple
-from .base_model import BasePyTorchBGModel, BaseSklearnBGModel
+from .base_model import BasePyTorchBGModel
 
 #pyTorch implementation
 try:

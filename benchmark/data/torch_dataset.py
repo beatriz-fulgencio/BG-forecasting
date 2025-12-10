@@ -72,6 +72,7 @@ class OhioDataset(Dataset):
     def _extract_features(self) -> np.ndarray:
         """Extract feature matrix from DataFrame."""
         feature_data = []
+        print(self.df.columns)
         glucose = self.df["glucose"].to_numpy(dtype=np.float32)
         
         if self.unimodal:
@@ -287,8 +288,7 @@ def prepare_patient_datasets(train_df: pd.DataFrame,
     return train_dataset, test_dataset
 
 
-def prepare_personal_data(train_csv_path: str,
-                                       test_csv_path: str,
+def prepare_personal_data(patient_data: dict,
                                        sequence_length: int = 12,
                                        prediction_horizon: int = 1,
                                        unimodal: bool = False) -> Tuple[OhioDataset, OhioDataset]:
@@ -305,9 +305,9 @@ def prepare_personal_data(train_csv_path: str,
     Returns:
         Tuple of (train_dataset, test_dataset)
     """
-    train_df = pd.read_csv(train_csv_path, index_col=0, parse_dates=True)
-    test_df = pd.read_csv(test_csv_path, index_col=0, parse_dates=True)
-    
+    train_df = patient_data['train']    
+    test_df = patient_data['test']
+
     return prepare_patient_datasets(
         train_df, test_df, sequence_length, prediction_horizon, unimodal
     )

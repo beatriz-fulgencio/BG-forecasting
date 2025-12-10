@@ -49,13 +49,144 @@ except ImportError:
     BGMETRICS_AVAILABLE = False
 
 
+def plot_temporal_prediction(y_true: np.ndarray,
+                            y_pred: np.ndarray,
+                            input_sequences: Optional[np.ndarray] = None,
+                            prediction_horizon: int = 6,
+                            sequence_length: int = 12,
+                            sample_interval_minutes: int = 5,
+                            num_examples: int = 4,
+                            title: str = "Temporal Glucose Prediction",
+                            figsize: Tuple[int, int] = (16, 10),
+                            save_path: Optional[str] = None) -> Optional[Figure]:
+    """
+    Plot predictions showing the temporal relationship between history and future.
+    
+    This visualization shows:
+    - History window (sequence_length steps back)
+    - Prediction point (prediction_horizon steps ahead)
+    - Different horizons will show different temporal spans
+    
+    Args:
+        y_true: True glucose values (test set)
+        y_pred: Predicted glucose values (test set)
+        input_sequences: Historical sequences used as input (N, sequence_length, features) - if None, will simulate
+        prediction_horizon: How many steps ahead we're predicting
+        sequence_length: How many steps of history were used
+        sample_interval_minutes: Minutes between samples (default 5)
+        num_examples: Number of example predictions to show
+        title: Plot title
+        figsize: Figure size
+        save_path: Path to save figure
+    
+    Returns:
+        Matplotlib figure or None if plotting is not available
+    """
+    if not PLOTTING_AVAILABLE:
+        warnings.warn("Matplotlib not available. Cannot create plot.")
+        return None
+    
+    # Calculate metrics
+    mae = np.mean(np.abs(y_true - y_pred))
+    rmse = np.sqrt(np.mean((y_true - y_pred)**2))
+    horizon_minutes = prediction_horizon * sample_interval_minutes
+    history_minutes = sequence_length * sample_interval_minutes
+    
+    # Create figure
+    fig, axes = plt.subplots(2, 2, figsize=figsize)
+    axes = axes.flatten()
+    
+    # Enhanced title
+    fig.suptitle(f'{title}\nPrediction Horizon: {horizon_minutes} min ({prediction_horizon} steps) | ' +
+                f'MAE: {mae:.2f} mg/dL | RMSE: {rmse:.2f} mg/dL',
+                fontsize=14, fontweight='bold')
+    
+    # Use fixed prediction indices for consistency (e.g., 3rd, 33rd, 66th, 100th)
+    # This ensures the same examples are shown every time
+    base_indices = [3, 33, 66, 100]  # Fixed positions in test set
+    indices = [min(idx, len(y_true) - 1) for idx in base_indices[:num_examples]]
+    
+    for i, idx in enumerate(indices):
+        ax = axes[i]
+        
+        # Get or simulate history
+        if input_sequences is not None and idx < len(input_sequences):
+            # Use actual input sequence (take first feature if multivariate)
+            if input_sequences.ndim == 3:
+                history_true = input_sequences[idx, :, 0]  # First feature (glucose)
+            else:
+                history_true = input_sequences[idx, :]
+        else:
+            # Simulate history - linear interpolation from a reasonable range
+            history_true = np.linspace(y_true[idx] - 20, y_true[idx], sequence_length)
+        
+        # Create time axis
+        # Negative time = history, 0 = now, positive = future
+        time_history = np.arange(-history_minutes, 0, sample_interval_minutes)
+        time_prediction = horizon_minutes
+        
+        # Plot history
+        ax.plot(time_history, history_true, 'b-', linewidth=2, 
+               label='Historical data', marker='o', markersize=4, alpha=0.7)
+        
+        # Plot "now" marker
+        ax.axvline(x=0, color='green', linestyle='--', linewidth=2, 
+                  label='Now (prediction time)', alpha=0.7)
+        
+        # Plot prediction point
+        ax.plot([0, time_prediction], [history_true[-1], y_pred[idx]], 
+               'r--', linewidth=2, alpha=0.5)
+        ax.plot(time_prediction, y_true[idx], 'bo', markersize=10, 
+               label=f'True @ +{horizon_minutes}min', zorder=5)
+        ax.plot(time_prediction, y_pred[idx], 'r^', markersize=10, 
+               label=f'Predicted @ +{horizon_minutes}min', zorder=5)
+        
+        # Add error annotation
+        error = abs(y_true[idx] - y_pred[idx])
+        mid_y = (y_true[idx] + y_pred[idx]) / 2
+        ax.annotate(f'Error: {error:.1f} mg/dL', 
+                   xy=(time_prediction, mid_y),
+                   xytext=(time_prediction + 10, mid_y),
+                   fontsize=9,
+                   bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.7))
+        
+        # Shade prediction region
+        ax.axvspan(0, time_prediction, alpha=0.1, color='yellow', 
+                  label=f'Prediction span ({horizon_minutes} min)')
+        
+        # Clinical ranges
+        ax.axhspan(70, 180, color='g', alpha=0.05)
+        ax.axhspan(0, 70, color='r', alpha=0.05)
+        ax.axhspan(180, 400, color='y', alpha=0.05)
+        
+        # Formatting
+        ax.set_xlabel('Time (minutes relative to prediction point)', fontsize=10)
+        ax.set_ylabel('Glucose (mg/dL)', fontsize=10)
+        ax.set_title(f'Example {i+1}', fontsize=11)
+        ax.grid(True, alpha=0.3)
+        ax.legend(fontsize=8, loc='best')
+        
+        # Set x-axis limits to show temporal span - THIS IS KEY!
+        # Different horizons will have different x-axis ranges
+        ax.set_xlim([-history_minutes - 10, time_prediction + 15])
+        ax.set_ylim([50, 250])
+    
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    
+    return fig
+
+
 def plot_predictions(y_true: np.ndarray, 
                      y_pred: np.ndarray,
                      timestamps: Optional[np.ndarray] = None,
                      uncertainty: Optional[np.ndarray] = None, 
                      title: str = "Glucose Prediction",
                      figsize: Tuple[int, int] = (10, 6),
-                     save_path: Optional[str] = None) -> Optional[Figure]:
+                     save_path: Optional[str] = None,
+                     sample_interval_minutes: int = 5) -> Optional[Figure]:
     """
     Plot true vs predicted glucose values with optional uncertainty.
     
@@ -67,6 +198,7 @@ def plot_predictions(y_true: np.ndarray,
         title: Plot title
         figsize: Figure size
         save_path: Path to save the figure
+        sample_interval_minutes: Minutes between samples (default 5)
         
     Returns:
         Matplotlib figure or None if plotting is not available
@@ -77,13 +209,20 @@ def plot_predictions(y_true: np.ndarray,
     
     fig, ax = plt.subplots(figsize=figsize)
     
-    x = timestamps if timestamps is not None else np.arange(len(y_true))
+    # Create x-axis in minutes for standardization
+    if timestamps is not None and PANDAS_AVAILABLE:
+        x = timestamps
+        use_time_formatter = True
+    else:
+        # Standardize x-axis to show time in minutes
+        x = np.arange(len(y_true)) * sample_interval_minutes
+        use_time_formatter = False
     
     # Plot the true values
-    ax.plot(x, y_true, 'b-', label='True Glucose')
+    ax.plot(x, y_true, 'b-', label='True Glucose', linewidth=2, alpha=0.7)
     
     # Plot the predicted values
-    ax.plot(x, y_pred, 'r-', label='Predicted Glucose')
+    ax.plot(x, y_pred, 'r-', label='Predicted Glucose', linewidth=2, alpha=0.7)
     
     # Add uncertainty if provided
     if uncertainty is not None:
@@ -98,9 +237,11 @@ def plot_predictions(y_true: np.ndarray,
     ax.axhspan(0, 70, color='r', alpha=0.1, label='Hypoglycemia (<70 mg/dL)')
     ax.axhspan(180, max(np.max(y_true), np.max(y_pred))*1.1, color='y', alpha=0.1, label='Hyperglycemia (>180 mg/dL)')
     
-    # Configure the plot
-    ax.set_title(title)
-    ax.set_ylabel('Glucose (mg/dL)')
+    
+    enhanced_title = f"{title}\n"
+
+    ax.set_title(enhanced_title, fontsize=12, fontweight='bold')
+    ax.set_ylabel('Glucose (mg/dL)', fontsize=11)
     
     if timestamps is not None and PANDAS_AVAILABLE:
         # Format the x-axis for timestamps
@@ -210,10 +351,14 @@ def create_prediction_dashboard(y_true: np.ndarray,
                                title: Optional[str] = None,
                                patient_id: Optional[str] = None,
                                diabetes_type: int = 1,
-                               figsize: Tuple[int, int] = (16, 12),
+                               prediction_horizon: Optional[int] = None,
+                               sequence_length: int = 12,
+                               input_sequences: Optional[np.ndarray] = None,
+                               sample_interval_minutes: int = 5,
+                               figsize: Tuple[int, int] = (16, 16),
                                save_path: Optional[str] = None) -> Optional[Figure]:
     """
-    Create a comprehensive dashboard with predictions, error analysis, and error grids.
+    Create a comprehensive dashboard with predictions, error analysis, error grids, and temporal visualization.
     
     Args:
         y_true: True glucose values
@@ -222,6 +367,10 @@ def create_prediction_dashboard(y_true: np.ndarray,
         metrics: Optional dictionary of evaluation metrics
         patient_id: Optional patient identifier
         diabetes_type: Type of diabetes for Parkes analysis
+        prediction_horizon: Optional prediction horizon in timesteps
+        sequence_length: Length of input sequence used for predictions
+        input_sequences: Optional input sequences for temporal visualization
+        sample_interval_minutes: Minutes between samples (default 5)
         figsize: Figure size
         save_path: Path to save the figure
         
@@ -236,14 +385,22 @@ def create_prediction_dashboard(y_true: np.ndarray,
     if metrics is None and BGMETRICS_AVAILABLE:
         metrics = BGMetrics.calculate_comprehensive_metrics(y_true, y_pred)
     
-    # Create figure with subplots
-    fig = plt.figure(figsize=figsize)
-    fig.suptitle(title if title is not None else "Blood Glucose Prediction Dashboard", fontsize=16, fontweight='bold')
-    gs = GridSpec(3, 3, figure=fig, height_ratios=[1, 1, 1], width_ratios=[2, 1, 1])
+    # Create enhanced title with prediction horizon
+    if title is None:
+        title = "Blood Glucose Prediction Dashboard"
     
-    # Time series plot (top row, spanning 2 columns)
+    if prediction_horizon is not None:
+        minutes = prediction_horizon * sample_interval_minutes
+        title = f"{title} - {minutes} min ({prediction_horizon} steps) Prediction Horizon"
+    
+    # Create figure with subplots - now with 4 rows to include temporal visualization
+    fig = plt.figure(figsize=figsize)
+    fig.suptitle(title, fontsize=16, fontweight='bold')
+    gs = GridSpec(4, 3, figure=fig, height_ratios=[1, 1, 1, 1], width_ratios=[2, 1, 1], hspace=0.3)
+    
+    # Time series plot (top row, spanning 2 columns) - WITH MINUTES ON X-AXIS
     ax1 = fig.add_subplot(gs[0, :2])
-    x = timestamps if timestamps is not None else np.arange(len(y_true))
+    x = np.arange(len(y_true))
     ax1.plot(x, y_true, 'b-', label='True Glucose', linewidth=2)
     ax1.plot(x, y_pred, 'r-', label='Predicted Glucose', linewidth=2)
     
@@ -313,7 +470,7 @@ def create_prediction_dashboard(y_true: np.ndarray,
         
         ax2.set_title(metrics_text, fontsize=12, fontweight='bold')
     
-    # Clarke Error Grid (middle)
+    # Clarke Error Grid (row 1, left)
     ax3 = fig.add_subplot(gs[1, 0])
     if CLARKE_EGA_AVAILABLE:
         try:
@@ -324,7 +481,7 @@ def create_prediction_dashboard(y_true: np.ndarray,
         except Exception as e:
             warnings.warn(f"Failed to render Clarke EGA: {e}")
 
-    # Parkes Error Grid (bottom, spanning all columns)
+    # Parkes Error Grid (row 1, right)
     ax4 = fig.add_subplot(gs[1, 2])
     if PARKES_EGA_AVAILABLE:
         try:
@@ -339,6 +496,82 @@ def create_prediction_dashboard(y_true: np.ndarray,
         ax4.text(0.5, 0.5, "Parkes Error Grid not available", 
                  ha='center', va='center', fontsize=12)
         ax4.axis('off')
+    
+    # Temporal Prediction Examples (rows 2-3, spanning all columns)
+    # This shows the temporal relationship between history and predictions
+    if prediction_horizon is not None:
+        # Create 1 temporal example subplots
+        ax_temp1 = fig.add_subplot(gs[2, :])
+        
+        horizon_minutes = prediction_horizon * sample_interval_minutes
+        history_minutes = sequence_length * sample_interval_minutes
+        
+        # Use fixed prediction index for consistency (always show the 3rd prediction)
+        num_examples = 1
+        indices = [min(3, len(y_true) - 1)]  # Fixed at index 3 for reproducibility
+
+        for ax_idx, (ax, idx) in enumerate(zip([ax_temp1], indices)):
+            # Get or simulate history
+            if input_sequences is not None and idx < len(input_sequences):
+                # Use actual input sequence
+                if input_sequences.ndim == 3:
+                    history_true = input_sequences[idx, :, 0]  # First feature (glucose)
+                else:
+                    history_true = input_sequences[idx, :]
+            else:
+                # Simulate history
+                history_true = np.linspace(y_true[idx] - 20, y_true[idx], sequence_length)
+            
+            # Create time axis
+            time_history = np.arange(-history_minutes, 0, sample_interval_minutes)
+            time_prediction = horizon_minutes
+            
+            # Plot history
+            ax.plot(time_history, history_true, 'b-', linewidth=2.5, 
+                   label='Historical data', marker='o', markersize=5, alpha=0.8)
+            
+            # Plot "now" marker
+            ax.axvline(x=0, color='green', linestyle='--', linewidth=2.5, 
+                      label='Now (prediction time)', alpha=0.8)
+            
+            # Plot prediction trajectory
+            ax.plot([0, time_prediction], [history_true[-1], y_pred[idx]], 
+                   'r--', linewidth=2, alpha=0.6)
+            
+            # Plot prediction points
+            ax.plot(time_prediction, y_true[idx], 'bo', markersize=12, 
+                   label=f'True @ +{horizon_minutes}min', zorder=5)
+            ax.plot(time_prediction, y_pred[idx], 'r^', markersize=12, 
+                   label=f'Predicted @ +{horizon_minutes}min', zorder=5)
+            
+            # Add error annotation
+            error = abs(y_true[idx] - y_pred[idx])
+            mid_y = (y_true[idx] + y_pred[idx]) / 2
+            ax.annotate(f'Error: {error:.1f} mg/dL', 
+                       xy=(time_prediction, mid_y),
+                       xytext=(time_prediction + 10, mid_y),
+                       fontsize=10,
+                       bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.8))
+            
+            # Shade prediction region
+            ax.axvspan(0, time_prediction, alpha=0.15, color='yellow', 
+                      label=f'Prediction span ({horizon_minutes} min)')
+            
+            # Clinical ranges
+            ax.axhspan(70, 180, color='g', alpha=0.08)
+            ax.axhspan(0, 70, color='r', alpha=0.08)
+            ax.axhspan(180, 400, color='y', alpha=0.08)
+            
+            # Formatting
+            ax.set_xlabel('Time (minutes relative to prediction point)', fontsize=11)
+            ax.set_ylabel('Glucose (mg/dL)', fontsize=11)
+            ax.set_title(f'Temporal Prediction Example {ax_idx + 1}', fontsize=12, fontweight='bold')
+            ax.grid(True, alpha=0.4)
+            ax.legend(fontsize=9, loc='best')
+            
+            # Set x-axis limits - THIS SHOWS THE TEMPORAL SPAN!
+            ax.set_xlim([-history_minutes - 10, time_prediction + 15])
+            ax.set_ylim([50, 250])
 
     if save_path is not None:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
