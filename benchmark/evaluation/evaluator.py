@@ -1,6 +1,6 @@
 import numpy as np
 import warnings
-from typing import List, Optional, Dict, Union
+from typing import List, Optional, Dict, Tuple, Union
 
 from .metrics import BGMetrics
 
@@ -29,7 +29,9 @@ class BGEvaluator:
                        y_true: np.ndarray, 
                        y_pred: np.ndarray,
                        uncertainty: Optional[np.ndarray] = None,
-                       metrics: Optional[List[str]] = None) -> Dict[str, Union[float, Dict]]:
+                       metrics: Optional[List[str]] = None,
+                       units: str = "mg/dL",
+                       grid_clip_range: Optional[Tuple[float, float]] = None) -> Dict[str, Union[float, Dict]]:
         """
         Compute specified metrics for glucose prediction evaluation.
         
@@ -38,11 +40,44 @@ class BGEvaluator:
             y_pred: Predicted glucose values  
             uncertainty: Optional prediction uncertainty estimates
             metrics: List of metrics to compute (uses default if None)
+            units: Unit label for both arrays. Clinical metrics currently
+                require ``mg/dL``; callers must inverse-transform first.
+            grid_clip_range: Optional ``(low, high)`` measurement range. The
+                error-grid analyses are defined only on the measurement domain,
+                so when this is given both arrays are clipped to it for those
+                metrics alone. The point-error metrics still see raw values.
             
         Returns:
             Dictionary of computed metrics
         """
+        if units.lower() not in {"mg/dl", "mg/dL".lower()}:
+            raise ValueError(
+                f"Unsupported glucose units {units!r}; clinical metrics require mg/dL"
+            )
         metrics = metrics or self.default_metrics
+        y_true = np.asarray(y_true)
+        y_pred = np.asarray(y_pred)
+        if y_true.shape != y_pred.shape:
+            raise ValueError(
+                f"Prediction/target shape mismatch: {y_pred.shape} vs {y_true.shape}"
+            )
+        if not np.all(np.isfinite(y_true)) or not np.all(np.isfinite(y_pred)):
+            raise ValueError("Prediction and target values must be finite")
+
+        # The error grids classify a pair against zones defined on the
+        # measurement domain, so a prediction outside it has no zone. Clipping
+        # keeps every pair classified and matches the censoring already present
+        # in the reference values, which saturate at the sensor limits.
+        if grid_clip_range is None:
+            grid_true, grid_pred = y_true, y_pred
+        else:
+            clip_low, clip_high = grid_clip_range
+            if clip_low > clip_high:
+                raise ValueError(
+                    f"grid_clip_range must be (low, high); got ({clip_low}, {clip_high})"
+                )
+            grid_true = np.clip(y_true, clip_low, clip_high)
+            grid_pred = np.clip(y_pred, clip_low, clip_high)
         results = {}
         
         for metric in metrics:
@@ -59,9 +94,9 @@ class BGEvaluator:
             elif metric_lower in ['tir', 'time_in_range']:
                 results['tir'] = self.metrics_calculator.comparing_time_in_range(y_true, y_pred)
             elif metric_lower in ['clarke', 'clarke_ega']:
-                results['clarke_zones'] = self.metrics_calculator.clarke_error_grid_analysis(y_true, y_pred)
+                results['clarke_zones'] = self.metrics_calculator.clarke_error_grid_analysis(grid_true, grid_pred)
             elif metric_lower in ['parkes', 'parkes_ega']:
-                results['parkes_zones'] = self.metrics_calculator.parkes_error_grid_analysis(y_true, y_pred)
+                results['parkes_zones'] = self.metrics_calculator.parkes_error_grid_analysis(grid_true, grid_pred)
             #TODO : implement
             elif metric_lower in ['cg_ega', 'continuous_glucose_ega']:
                 results['cg_ega'] = self.metrics_calculator.continuous_glucose_error_grid_analysis(y_true, y_pred)

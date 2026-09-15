@@ -161,21 +161,28 @@ class BGMetrics:
         return np.mean(above_range) * 100
     
     @staticmethod
-    def comparing_time_in_range(glucose_values: np.ndarray, reference_values: np.ndarray) -> Dict[str, float]:
+    def comparing_time_in_range(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
         """
-        Compare Time in Range (TIR) metrics between predicted and reference glucose values.
+        Compare glucose-range occupancy between predictions and reference.
+
+        The argument order matches every other metric in this class. Taking the
+        reference first and the prediction second previously inverted the sign
+        of every value returned here.
 
         Args:
-            glucose_values: Predicted glucose readings (mg/dL)
-            reference_values: True glucose readings (mg/dL)
-            
+            y_true: True glucose readings (mg/dL)
+            y_pred: Predicted glucose readings (mg/dL)
+
         Returns:
-            Difference in TIR as percentage dictionary
+            Prediction minus reference, in percentage points, for each band. A
+            positive ``time_in_range`` means the model places more readings
+            inside 70-180 than the reference does, i.e. it overestimates time
+            in range.
         """
         return {
-            'time_in_range': BGMetrics.time_in_range(glucose_values) - BGMetrics.time_in_range(reference_values),
-            'time_below_range': BGMetrics.time_below_range(glucose_values) - BGMetrics.time_below_range(reference_values),
-            'time_above_range': BGMetrics.time_above_range(glucose_values) - BGMetrics.time_above_range(reference_values)
+            'time_in_range': BGMetrics.time_in_range(y_pred) - BGMetrics.time_in_range(y_true),
+            'time_below_range': BGMetrics.time_below_range(y_pred) - BGMetrics.time_below_range(y_true),
+            'time_above_range': BGMetrics.time_above_range(y_pred) - BGMetrics.time_above_range(y_true)
         }
     
     @staticmethod

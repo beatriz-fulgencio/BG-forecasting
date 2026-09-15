@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import random
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
@@ -11,6 +12,7 @@ import numpy as np
 import pandas as pd
 import torch
 import yaml
+from scipy.stats import t as student_t
 from torch.utils.data import DataLoader
 
 from ..configs.config_manager import ExperimentConfig
@@ -27,6 +29,16 @@ MODEL_REGISTRY = {
     "lstm": LSTMBGModel,
     "gru": GRUBGModel,
 }
+
+# Broad measurement plausibility bounds in the units used by the clinical
+# metrics. These are deliberately wider than the usual treatment range.
+GLUCOSE_PLAUSIBLE_RANGE_MG_DL = (20.0, 600.0)
+
+# The OhioT1DM CGM reports only within this interval and saturates at both ends,
+# so every target is already censored to it. Predictions are clipped to the same
+# interval before the error-grid analyses, which are themselves defined only on
+# the measurement domain. Point-error metrics keep the raw predictions.
+CGM_SENSOR_RANGE_MG_DL = (40.0, 400.0)
 
 
 class _ForecastingDataset:
@@ -207,11 +219,53 @@ def _targets(loader: DataLoader) -> np.ndarray:
     return np.concatenate(batches, axis=0)
 
 
-def _glucose_scale(dataset) -> Tuple[float, float]:
-    glucose_index = dataset.feature_columns.index("glucose")
-    mean = float(dataset.mean[glucose_index])
-    std = float(dataset.std[glucose_index])
-    return mean, std if std > 0 else 1.0
+def _validate_evaluation_arrays(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
+    """Check evaluation arrays and report on implausible predictions.
+    """
+    if y_true.shape != y_pred.shape:
+        raise ValueError(
+            f"Prediction/target shape mismatch: {y_pred.shape} vs {y_true.shape}"
+        )
+    if not np.all(np.isfinite(y_true)) or not np.all(np.isfinite(y_pred)):
+        raise ValueError("Prediction and target values must be finite before evaluation")
+
+    lower, upper = GLUCOSE_PLAUSIBLE_RANGE_MG_DL
+    target_min, target_max = float(np.min(y_true)), float(np.max(y_true))
+    if target_min < lower or target_max > upper:
+        raise ValueError(
+            "Glucose targets outside the plausible mg/dL range "
+            f"[{lower:g}, {upper:g}]: observed [{target_min:.3f}, {target_max:.3f}]. "
+            "This indicates a data or inverse-transform problem, not a model problem."
+        )
+
+    implausible = int(np.count_nonzero((y_pred < lower) | (y_pred > upper)))
+    prediction_min, prediction_max = float(np.min(y_pred)), float(np.max(y_pred))
+    sensor_low, sensor_high = CGM_SENSOR_RANGE_MG_DL
+    clipped = int(np.count_nonzero((y_pred < sensor_low) | (y_pred > sensor_high)))
+    if implausible:
+        print(
+            f"  [WARNING] {implausible} of {y_pred.size} predictions fall outside the "
+            f"plausible range [{lower:g}, {upper:g}] mg/dL "
+            f"(predicted [{prediction_min:.1f}, {prediction_max:.1f}]); "
+            "they are reported, not discarded"
+        )
+    if clipped:
+        print(
+            f"  [INFO] {clipped} of {y_pred.size} predictions fall outside the CGM "
+            f"range [{sensor_low:g}, {sensor_high:g}] mg/dL and are clipped for the "
+            "error-grid metrics only; point-error metrics use the raw values"
+        )
+    return {
+        "n_points": int(y_pred.size),
+        "n_implausible_predictions": implausible,
+        "implausible_prediction_rate": implausible / y_pred.size if y_pred.size else 0.0,
+        "n_predictions_clipped_for_grids": clipped,
+        "clipped_prediction_rate": clipped / y_pred.size if y_pred.size else 0.0,
+        "prediction_min_mg_dl": prediction_min,
+        "prediction_max_mg_dl": prediction_max,
+        "target_min_mg_dl": target_min,
+        "target_max_mg_dl": target_max,
+    }
 
 
 def _serializable(value: Any) -> Any:
@@ -264,9 +318,10 @@ def _save_plots(
     )
 
     sequences = np.concatenate([sequence.numpy() for sequence, _ in test_loader], axis=0)
-    mean, std = _glucose_scale(test_dataset)
     glucose_index = test_dataset.feature_columns.index("glucose")
-    sequences[:, :, glucose_index] = sequences[:, :, glucose_index] * std + mean
+    sequences[:, :, glucose_index] = test_dataset.inverse_transform_feature(
+        sequences[:, :, glucose_index], "glucose"
+    )
     artifacts: Dict[str, str] = {}
     dashboard = patient_dir / f"{model_name}_dashboard.png"
     create_prediction_dashboard(
@@ -300,6 +355,38 @@ def _flatten_numeric(prefix: str, value: Any, output: Dict[str, float]) -> None:
         output[prefix] = float(value)
 
 
+def _summarize_across_seeds(values: List[float]) -> Dict[str, Any]:
+    """Summarize one metric over the seeds that produced it.
+
+    A single seed has no spread to report, so the dispersion fields are null
+    rather than a zero that would read as perfect agreement.
+    """
+    array = np.asarray(values, dtype=float)
+    n = int(array.size)
+    mean = float(np.mean(array))
+    summary: Dict[str, Any] = {
+        "mean": mean,
+        "std": None,
+        "sem": None,
+        "ci95_low": None,
+        "ci95_high": None,
+        "min": float(np.min(array)),
+        "max": float(np.max(array)),
+        "n": n,
+    }
+    if n > 1:
+        std = float(np.std(array, ddof=1))
+        sem = std / math.sqrt(n)
+        half_width = float(student_t.ppf(0.975, n - 1)) * sem
+        summary.update({
+            "std": std,
+            "sem": sem,
+            "ci95_low": mean - half_width,
+            "ci95_high": mean + half_width,
+        })
+    return summary
+
+
 def _aggregate_runs(
     runs: List[Dict[str, Any]], config: ExperimentConfig
 ) -> List[Dict[str, Any]]:
@@ -307,6 +394,9 @@ def _aggregate_runs(
         {"clarke_ega": "clarke_zones", "parkes_ega": "parkes_zones"}.get(metric, metric)
         for metric in config.evaluation.metrics
     }
+    # Implausible-prediction counts vary by seed, so they belong in the
+    # cross-seed summary next to the metrics they qualify.
+    result_keys.add("prediction_diagnostics")
     grouped: Dict[Tuple[str, int, str], Dict[str, Any]] = {}
     for run in runs:
         for patient_id_text, result in run["results"].items():
@@ -327,14 +417,7 @@ def _aggregate_runs(
     for (mode, patient_id, model_name), group in sorted(grouped.items()):
         metrics: Dict[str, Dict[str, Any]] = {}
         for metric_name, values in sorted(group["values"].items()):
-            array = np.asarray(values, dtype=float)
-            metrics[metric_name] = {
-                "mean": float(np.mean(array)),
-                "std": float(np.std(array, ddof=0)),
-                "min": float(np.min(array)),
-                "max": float(np.max(array)),
-                "n": int(array.size),
-            }
+            metrics[metric_name] = _summarize_across_seeds(values)
         aggregates.append({
             "mode": mode,
             "patient_id": patient_id,
@@ -382,6 +465,10 @@ def _run_mode(
         "version": config.data.version,
         "sequence_length": config.preprocessing.window_size,
         "prediction_horizon": config.preprocessing.prediction_horizon,
+        "prediction_horizon_minutes": config.preprocessing.prediction_horizon * config.preprocessing.sampling_rate,
+        "target_units": "mg/dL",
+        "plausible_glucose_range_mg_dl": list(GLUCOSE_PLAUSIBLE_RANGE_MG_DL),
+        "grid_metric_clip_range_mg_dl": list(CGM_SENSOR_RANGE_MG_DL),
         "batch_size": config.training.batch_size,
         "seed": seed,
         "mode": mode,
@@ -440,13 +527,17 @@ def _run_mode(
 
             predictions = _last_horizon(model.predict(test_loader))
             true_values = _last_horizon(_targets(test_loader))
-            mean, std = _glucose_scale(test_dataset)
-            predictions = predictions * std + mean
-            true_values = true_values * std + mean
+            predictions = test_dataset.inverse_transform_target(predictions)
+            # Targets are sensor readings, so recover them exactly; predictions
+            # are continuous estimates and must not be snapped.
+            true_values = test_dataset.inverse_transform_reference(true_values)
+            diagnostics = _validate_evaluation_arrays(true_values, predictions)
             metrics = evaluator.compute_metrics(
                 y_true=true_values,
                 y_pred=predictions,
                 metrics=config.evaluation.metrics,
+                units=test_dataset.target_units,
+                grid_clip_range=CGM_SENSOR_RANGE_MG_DL,
             )
             patient_dir = experiment_dir / f"patient_{patient_id}"
             patient_dir.mkdir(parents=True, exist_ok=True)
@@ -468,6 +559,7 @@ def _run_mode(
                             test_loader, test_dataset, config)
             )
             patient_result = dict(metrics)
+            patient_result["prediction_diagnostics"] = diagnostics
             patient_result["model_info"] = {
                 "model_name": model_name,
                 "patient_id": patient_id,
@@ -475,6 +567,9 @@ def _run_mode(
                 "seed": seed,
                 "prediction_horizon_steps": config.preprocessing.prediction_horizon,
                 "prediction_horizon_minutes": config.preprocessing.prediction_horizon * config.preprocessing.sampling_rate,
+                "target_units": test_dataset.target_units,
+                "plausible_glucose_range_mg_dl": list(GLUCOSE_PLAUSIBLE_RANGE_MG_DL),
+                "grid_metric_clip_range_mg_dl": list(CGM_SENSOR_RANGE_MG_DL),
                 "feature_dim": train_dataset.data.shape[1],
             }
             patient_result["training_history"] = history
@@ -530,15 +625,35 @@ def run_configured_experiment(config: ExperimentConfig, patient_ids: List[int]) 
     try:
         frames = _load_patient_frames(config, patient_ids)
         runs: List[Dict[str, Any]] = []
+        failures: List[Dict[str, Any]] = []
         for mode in modes:
             for seed in config.training.seeds:
                 child_dir = parent_dir / mode / f"seed_{seed}"
-                runs.append(
-                    _run_mode(config, mode, seed, patient_ids, frames, child_dir)
-                )
+                try:
+                    runs.append(
+                        _run_mode(config, mode, seed, patient_ids, frames, child_dir)
+                    )
+                except Exception as exc:
+                    # Seeds are independent by construction, so one failing is a
+                    # reason to record it and carry on, not to discard the seeds
+                    # that already finished -- they are the point of the run.
+                    print(f"  [ERROR] {mode} seed {seed} failed: {exc}")
+                    failures.append({
+                        "mode": mode,
+                        "seed": seed,
+                        "experiment_dir": str(child_dir),
+                        "error": f"{type(exc).__name__}: {exc}",
+                    })
         aggregates = _aggregate_runs(runs, config)
         if not aggregates:
-            raise RuntimeError("No successful seed runs were available to aggregate")
+            detail = "; ".join(
+                f"{failure['mode']} seed {failure['seed']} ({failure['error']})"
+                for failure in failures
+            )
+            raise RuntimeError(
+                "No seed run produced metrics to aggregate"
+                + (f"; all {len(failures)} failed: {detail}" if failures else "")
+            )
         if "json" in config.output.export_format:
             (parent_dir / "aggregate_metrics.json").write_text(
                 json.dumps(aggregates, indent=2), encoding="utf-8"
@@ -552,12 +667,22 @@ def run_configured_experiment(config: ExperimentConfig, patient_ids: List[int]) 
             for run in runs
         ]
         final_results = {"runs": run_summaries, "aggregate": aggregates}
-        parent_tracker.end_experiment(final_results)
+        if failures:
+            final_results["failed_runs"] = failures
+            print(
+                f"[WARNING] {len(failures)} of {len(runs) + len(failures)} mode/seed "
+                f"runs failed; the aggregate below covers {len(runs)} run(s) only"
+            )
+        parent_tracker.end_experiment(
+            final_results,
+            status="completed_with_failures" if failures else "completed",
+        )
         return {
             "experiment_id": parent_tracker.experiment_id,
             "experiment_dir": str(parent_dir),
             "runs": runs,
             "aggregate": aggregates,
+            "failed_runs": failures,
         }
     except Exception as exc:
         parent_tracker.log_error(str(exc), context="multi-seed experiment")

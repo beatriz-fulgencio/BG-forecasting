@@ -10,10 +10,7 @@ This module provides standardized preprocessing functions including:
 import pandas as pd  # type: ignore
 import numpy as np
 from typing import Dict, List, Tuple, Optional, Union
-import warnings
 import os
-
-warnings.simplefilter('ignore', Warning)
 
 
 class OhioBGDataPreprocessor:
@@ -487,14 +484,13 @@ def preprocess_ohiot1dm_data(patient_data: Dict[int, pd.DataFrame],
         print(f"\n=== Preprocessing patient {patient_id} ===")
         try:
             processed_df = preprocessor.preprocess_patient_data(
-                df, 
+                df,
                 **preprocessing_kwargs
             )
-            preprocessed_data[patient_id] = processed_df
-            print(f"Successfully preprocessed patient {patient_id}")
-        except Exception as e:
-            print(f"Error preprocessing patient {patient_id}: {e}")
-            continue
+        except Exception as exc:
+            raise RuntimeError(f"Preprocessing failed for patient {patient_id}: {exc}") from exc
+        preprocessed_data[patient_id] = processed_df
+        print(f"Successfully preprocessed patient {patient_id}")
     
     return preprocessed_data
 

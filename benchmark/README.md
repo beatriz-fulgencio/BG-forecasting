@@ -34,7 +34,12 @@ python -m benchmark.cli run --config benchmark/configs/example_experiment.yaml
 ### 4. View Results
 Results are saved in `results/experiments/` as parent experiments containing:
 - The resolved configuration and parent tracking manifest
-- Aggregate mean, population standard deviation, minimum, maximum, and count across seeds
+- Aggregate mean, sample standard deviation, standard error, 95% t-interval,
+  minimum, maximum, and count across seeds. Seeds are a sample of training runs,
+  so the spread uses `ddof=1`; a single seed reports `null` for the dispersion
+  fields rather than a zero that would read as perfect agreement
+- A failed seed is recorded in `failed_runs` and the remaining seeds still
+  aggregate; the parent run is then marked `completed_with_failures`
 - A `<mode>/seed_<n>/` subrun with its own manifest, predictions, metrics, and enabled artifacts
 
 ## Directory Structure
@@ -71,7 +76,9 @@ benchmark/
 ### Domain-Specific Metrics
 - Clarke Error Grid Analysis (EGA)
 - Parkes Error Grid Analysis (PEGA)
-- Time in Range (TIR) metrics
+- Time in Range (TIR) metrics, reported as prediction minus reference in
+  percentage points: a positive `time_in_range` means the model places more
+  readings inside 70-180 mg/dL than the reference does
 
 ## Configuration
 
@@ -88,6 +95,35 @@ two-patient smoke run.
 - **Training**: Required mode (`regular`, `transfer`, or `both`), required `seeds` list, optimizer settings, and device
 - **Evaluation**: Metrics to compute in mg/dL
 - **Output**: Result storage and artifact options
+
+Before clinical metrics run, predictions and targets are inverse-transformed to
+mg/dL using the *training* statistics, and checked for finite values. Non-finite
+values are fatal for both arrays, because a NaN makes every downstream metric
+undefined.
+
+The 20–600 mg/dL plausibility range is then applied asymmetrically. A target
+outside it is fatal. A prediction outside it is counted, warned about, and
+recorded in `prediction_diagnostics`, which is aggregated across seeds alongside
+the configured metrics. Prediction artifacts include explicit units and horizon
+metadata.
+
+### Error-grid domain
+
+The Clarke and Parkes grids are published on the CGM measurement domain and
+their zone rules are defined only there, so the grid range is not a tunable. The
+OhioT1DM CGM reports within 40–400 mg/dL and saturates at both ends: across both
+dataset versions all 166,533 readings fall in that interval, with 335 pinned at
+400 and 206 at 40. Every reference value is therefore already censored.
+
+Predictions are clipped to the same 40–400 mg/dL interval before the two grid
+analyses, and **only** before those — MAE, RMSE, MAPE, MARD, TIR and the exported
+prediction CSVs all use raw model output. This keeps the comparison symmetric
+with the censored reference, keeps both grids on their published domains, and
+keeps every pair classified, so no zone percentage is computed over a shifting
+denominator. The cost is that clipping slightly flatters the grid metrics, so
+`prediction_diagnostics` reports `n_predictions_clipped_for_grids` and
+`clipped_prediction_rate` next to the zone percentages, and both are aggregated
+across seeds. Report them alongside any published EGA result.
 
 ## Running Experiments
 

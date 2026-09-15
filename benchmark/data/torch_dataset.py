@@ -164,6 +164,9 @@ class OhioDataset(Dataset):
 
         print(f"    Starting standardization...")
 
+        if (external_mean is None) != (external_std is None):
+            raise ValueError("external_mean and external_std must be supplied together")
+
         if external_mean is None and external_std is None:
             print(f"    Using dataset to get mean and std")
             # Valid sequences may coexist with missing values elsewhere in the
@@ -176,14 +179,48 @@ class OhioDataset(Dataset):
                 self.std.append(np.nanstd(self.data[:, i]))
         else:
             print(f"    Using externally given mean and std")
-            self.mean = external_mean
-            self.std = external_std
+            if len(external_mean) != self.data.shape[1] or len(external_std) != self.data.shape[1]:
+                raise ValueError(
+                    "external_mean and external_std must match the number of features "
+                    f"({self.data.shape[1]})"
+                )
+            self.mean = list(external_mean)
+            self.std = list(external_std)
+
+        if not np.all(np.isfinite(self.mean)) or not np.all(np.isfinite(self.std)):
+            raise ValueError("normalization mean and std must contain only finite values")
+        if any(value < 0 for value in self.std):
+            raise ValueError("normalization standard deviations must be non-negative")
         
         # Apply standardization
         for i in range(self.data.shape[1]):
             self.data[:, i] = self.data[:, i] - self.mean[i]
             if self.std[i] > 0:  # Avoid division by zero
                 self.data[:, i] = self.data[:, i] / self.std[i]  # Z-score normalization
+
+    def inverse_transform_feature(self, values, feature_name: str):
+        """Convert standardized values for one feature to original units."""
+        if feature_name not in self.feature_columns:
+            raise ValueError(f"Unknown feature: {feature_name}")
+        feature_index = self.feature_columns.index(feature_name)
+        array = np.asarray(values, dtype=np.float64)
+        return array * (self.std[feature_index] or 1.0) + self.mean[feature_index]
+
+    def inverse_transform_target(self, values):
+        """Convert standardized glucose targets back to mg/dL."""
+        return self.inverse_transform_feature(values, "glucose")
+
+    def inverse_transform_reference(self, values, tolerance: float = 1e-3):
+        """Recover the original CGM readings behind standardized targets.
+        """
+        recovered = self.inverse_transform_target(values)
+        nearest = np.round(recovered)
+        return np.where(np.abs(recovered - nearest) <= tolerance, nearest, recovered)
+
+    @property
+    def target_units(self) -> str:
+        """Units of the glucose target returned by ``inverse_transform_target``."""
+        return "mg/dL"
 
     def _validate_data(self):
         """Ensure no NaN values in the final sequences."""

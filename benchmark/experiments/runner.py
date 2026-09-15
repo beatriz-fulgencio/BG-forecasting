@@ -34,6 +34,8 @@ from ..evaluation.reporting import (
 )
 from .tracking import ExperimentTracker
 
+GLUCOSE_PLAUSIBLE_RANGE_MG_DL = (20.0, 600.0)
+
 class BGForecastingDataset:
     """
     Wrapper around OhioDataset to return (input, target) pairs for training.
@@ -405,6 +407,8 @@ class ExperimentRunner:
                 'train_loader': train_loader,
                 'val_loader': val_loader,
                 'test_loader': test_loader,
+                'train_dataset': train_dataset,
+                'test_dataset': test_dataset,
                 'feature_dim': feature_dim,
                 'train_size': len(train_split),
                 'val_size': len(val_split),
@@ -476,6 +480,7 @@ class ExperimentRunner:
                 train_loader=data['global_loader'],
                 validation_loader=data['val_loader'],  # Use target patient validation
                 epochs=pretrain_epochs,
+                learning_rate=hyperparameters.get('learning_rate', 0.001),
                 early_stopping_patience=early_stopping_patience
             )
             
@@ -485,6 +490,7 @@ class ExperimentRunner:
                 train_loader=data['train_loader'],
                 validation_loader=data['val_loader'],
                 epochs=finetune_epochs,
+                learning_rate=hyperparameters.get('learning_rate', 0.001),
                 early_stopping_patience=early_stopping_patience
             )
             
@@ -516,6 +522,7 @@ class ExperimentRunner:
                 train_loader=data['train_loader'],
                 validation_loader=data['val_loader'],
                 epochs=total_epochs,
+                learning_rate=hyperparameters.get('learning_rate', 0.001),
                 early_stopping_patience=early_stopping_patience
             )
             
@@ -583,12 +590,38 @@ class ExperimentRunner:
             # Single-step targets: concatenate as before
             y_true = np.concatenate([t.reshape(-1) if t.ndim > 0 else [t] for t in true_values])
             print(f"[INFO] Concatenated single-step targets, shape: {y_true.shape}")
+
+        # Targets and predictions are standardized for training. Clinical
+        # metrics must receive the original glucose units exactly once.
+        normalization_dataset = data.get('test_dataset')
+        if normalization_dataset is None and hasattr(test_bg_dataset, 'ohio_dataset'):
+            normalization_dataset = test_bg_dataset.ohio_dataset
+        if normalization_dataset is None:
+            raise ValueError("Test normalization state is unavailable for inverse transformation")
+        predictions = normalization_dataset.inverse_transform_target(predictions)
+        y_true = normalization_dataset.inverse_transform_target(y_true)
+        input_sequences_array = np.asarray(input_sequences, dtype=np.float64)
+        glucose_index = normalization_dataset.feature_columns.index('glucose')
+        input_sequences_array[:, :, glucose_index] = normalization_dataset.inverse_transform_feature(
+            input_sequences_array[:, :, glucose_index], 'glucose'
+        )
+
+        if not np.all(np.isfinite(predictions)) or not np.all(np.isfinite(y_true)):
+            raise ValueError("Prediction and target values must be finite before evaluation")
+        lower, upper = GLUCOSE_PLAUSIBLE_RANGE_MG_DL
+        observed_min = min(float(np.min(predictions)), float(np.min(y_true)))
+        observed_max = max(float(np.max(predictions)), float(np.max(y_true)))
+        if observed_min < lower or observed_max > upper:
+            raise ValueError(
+                f"Glucose values outside plausible range [{lower:g}, {upper:g}] mg/dL: "
+                f"observed [{observed_min:.3f}, {observed_max:.3f}]"
+            )
         
         print(f"[DEBUG] Final prediction shape: {predictions.shape}")
         print(f"[DEBUG] Final target shape: {y_true.shape}")
         
         # Convert input sequences to numpy array for visualization
-        input_sequences_array = np.array(input_sequences)
+        input_sequences_array = np.array(input_sequences_array)
         print(f"[DEBUG] Input sequences shape: {input_sequences_array.shape}")
         
         # Verify shapes match
@@ -612,6 +645,9 @@ class ExperimentRunner:
             'patient_id': patient_id,
             'sequence_length': self.sequence_length,
             'prediction_horizon': self.prediction_horizon,
+            'prediction_horizon_minutes': self.prediction_horizon * 5,
+            'target_units': 'mg/dL',
+            'plausible_glucose_range_mg_dl': list(GLUCOSE_PLAUSIBLE_RANGE_MG_DL),
             'feature_dim': model.feature_dim,
             'hyperparameters': model.hyperparameters
         }
@@ -623,9 +659,9 @@ class ExperimentRunner:
             patient_dir.mkdir(exist_ok=True)
             
             pred_df = pd.DataFrame({
-                'true_values': y_true,
-                'predictions': predictions,
-                'error': np.abs(y_true - predictions)
+                'true_glucose_mg_dl': y_true,
+                'predicted_glucose_mg_dl': predictions,
+                'absolute_error_mg_dl': np.abs(y_true - predictions)
             })
             pred_file = patient_dir / f"{model.model_name}_predictions.csv"
             pred_df.to_csv(pred_file, index=False)

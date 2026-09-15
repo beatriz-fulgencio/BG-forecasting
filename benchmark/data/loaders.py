@@ -19,10 +19,7 @@ import xml.etree.ElementTree as ET
 import pandas as pd # type: ignore
 import numpy as np
 import datetime
-import warnings
 from typing import List, Dict, Optional, Tuple
-
-warnings.simplefilter('ignore', Warning) # Ignore warnings for cleaner output
 
 
 class OhioT1DMDataLoader:
@@ -444,12 +441,14 @@ class OhioT1DMDataLoader:
         
         return df
     
-    def load_all_patients(self, mode: str = 'train') -> Dict[int, pd.DataFrame]:
+    def load_all_patients(self, mode: str = 'train', strict: bool = True) -> Dict[int, pd.DataFrame]:
         """
         Load raw data for all patients in the specified version(s).
         
         Args:
             mode: 'train' or 'test'
+            strict: Raise when an expected patient file is missing. Set to
+                false only for exploratory partial-dataset inspection.
             
         Returns:
             Dictionary mapping patient IDs to their raw DataFrames
@@ -466,6 +465,8 @@ class OhioT1DMDataLoader:
                     patient_data[patient_id] = df
                     print(f"Successfully loaded patient {patient_id} from version {version}")
                 except FileNotFoundError as e:
+                    if strict:
+                        raise
                     print(f"Warning: {e}")
                     continue
         
@@ -533,10 +534,6 @@ def load_ohiot1dm_data(data_dir: str,
     else:
         patient_data = {}
         for patient_id in patient_ids:
-            try:
-                df = loader.load_patient_data(patient_id, mode)
-                patient_data[patient_id] = df
-            except FileNotFoundError as e:
-                print(f"Warning: Could not load patient {patient_id}: {e}")
-                continue
+            df = loader.load_patient_data(patient_id, mode)
+            patient_data[patient_id] = df
         return patient_data

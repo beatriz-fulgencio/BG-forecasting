@@ -65,7 +65,7 @@ class ClarkeEGA:
             Transparency of zone backgrounds
         """
         # Create a grid of points to classify
-        x_grid, y_grid = np.meshgrid(np.arange(0, 401, 2), np.arange(0, 401, 2))
+        x_grid, y_grid = np.meshgrid(np.arange(0, self._max_range + 1, 2), np.arange(0, self._max_range + 1, 2))
         x_flat = x_grid.flatten()
         y_flat = y_grid.flatten()
         
@@ -98,7 +98,7 @@ class ClarkeEGA:
                 color_array[mask] = [0.94, 0.5, 0.5, alpha]
         
         # Display the background
-        ax.imshow(color_array, extent=[0, 400, 0, 400], aspect='equal', 
+        ax.imshow(color_array, extent=[0, self._max_range, 0, self._max_range], aspect='equal', 
                  origin='lower', interpolation='nearest')
     
     def _get_zone_polygons(self) -> Dict[str, np.ndarray]:
@@ -122,7 +122,11 @@ class ClarkeEGA:
     
     def __init__(self):
         """Initialize Clarke EGA analyzer."""
-        self._max_range = 400  # mg/dl
+        # The Clarke grid is published on 0-400 mg/dL and the zone rules are
+        # only defined there, so the range is not a tunable. The OhioT1DM CGM
+        # reports [40, 400] and saturates at both ends, so no target can fall
+        # outside it; callers clip predictions to the sensor range instead.
+        self._max_range = 400  # mg/dL
         
     def analyze(self, y_true: Union[float, np.ndarray], 
                 y_pred: Union[float, np.ndarray]) -> Dict[str, Union[int, float, np.ndarray]]:
@@ -149,7 +153,7 @@ class ClarkeEGA:
         ------
         ValueError
             If input arrays have different lengths or values are out of 
-            physiological range (0-400 mg/dl)
+            physiological range (0-600 mg/dL)
         """
         y_true = np.atleast_1d(y_true)
         y_pred = np.atleast_1d(y_pred)
@@ -158,9 +162,9 @@ class ClarkeEGA:
         if len(y_true) != len(y_pred):
             raise ValueError("y_true and y_pred must have the same length")
             
-        if (np.max(y_true) > 400) or (np.max(y_pred) > 400) or \
+        if (np.max(y_true) > self._max_range) or (np.max(y_pred) > self._max_range) or \
            (np.min(y_true) < 0) or (np.min(y_pred) < 0):
-            raise ValueError("Values must be in physiological range (0-400 mg/dl)")
+            raise ValueError(f"Values must be in physiological range (0-{self._max_range} mg/dL)")
         
         n = len(y_true)
         zones = np.zeros(n, dtype=int)  # 1=A, 2=B, 3=C, 4=D, 5=E
@@ -267,8 +271,8 @@ class ClarkeEGA:
             self._create_zone_background(ax, alpha)
         
         # Set up axes first
-        ax.set_xlim(0, 400)
-        ax.set_ylim(0, 400)
+        ax.set_xlim(0, self._max_range)
+        ax.set_ylim(0, self._max_range)
         ax.set_aspect('equal')
         ax.grid(True, alpha=0.3)
         
@@ -307,21 +311,24 @@ class ClarkeEGA:
                       marker='o', facecolors='black', edgecolors='black', alpha=0.5)
         
         # Perfect agreement line (45° line)
-        ax.plot([0, 400], [0, 400], 'k:', linewidth=1, alpha=0.9, 
+        ax.plot([0, self._max_range], [0, self._max_range], 'k:', linewidth=1, alpha=0.9, 
                label='Perfect agreement')
         
         # Zone boundaries (converted from MATLAB)
         ax.plot([0, 175/3], [70, 70], 'k-', linewidth=1.5)
-        ax.plot([175/3, 400/1.2], [70, 400], 'k-', linewidth=1.5)
-        ax.plot([70, 70], [84, 400], 'k-', linewidth=1.5)
+        ax.plot([175/3, self._max_range/1.2], [70, self._max_range], 'k-', linewidth=1.5)
+        ax.plot([70, 70], [84, self._max_range], 'k-', linewidth=1.5)
         ax.plot([0, 70], [180, 180], 'k-', linewidth=1.5)
+        # Upper C edge is y_test = y_ref + 110, and the rule only applies up to
+        # y_ref = 290, so this segment ends at (290, 400) whatever the axis limit.
         ax.plot([70, 290], [180, 400], 'k-', linewidth=1.5)
         ax.plot([70, 70], [0, 56], 'k-', linewidth=1.5)
-        ax.plot([70, 400], [56, 320], 'k-', linewidth=1.5)
+        # Lower A edge is y_test = 0.8 * y_ref, so both endpoints scale together.
+        ax.plot([70, self._max_range], [56, 0.8 * self._max_range], 'k-', linewidth=1.5)
         ax.plot([180, 180], [0, 70], 'k-', linewidth=1.5)
-        ax.plot([180, 400], [70, 70], 'k-', linewidth=1.5)
+        ax.plot([180, self._max_range], [70, 70], 'k-', linewidth=1.5)
         ax.plot([240, 240], [70, 180], 'k-', linewidth=1.5)
-        ax.plot([240, 400], [180, 180], 'k-', linewidth=1.5)
+        ax.plot([240, self._max_range], [180, 180], 'k-', linewidth=1.5)
         ax.plot([130, 180], [0, 70], 'k-', linewidth=1.5)
         
         # Zone labels with colored backgrounds
@@ -414,8 +421,8 @@ class ClarkeEGA:
             self._create_zone_background(ax, alpha)
         
         # Set up axes first
-        ax.set_xlim(0, 400)
-        ax.set_ylim(0, 400)
+        ax.set_xlim(0, self._max_range)
+        ax.set_ylim(0, self._max_range)
         ax.set_aspect('equal')
         ax.grid(True, alpha=0.3)
         
@@ -454,21 +461,24 @@ class ClarkeEGA:
                       marker='o', facecolors='black', edgecolors='black', alpha=0.5)
         
         # Perfect agreement line (45° line)
-        ax.plot([0, 400], [0, 400], 'k:', linewidth=1, alpha=0.9, 
+        ax.plot([0, self._max_range], [0, self._max_range], 'k:', linewidth=1, alpha=0.9, 
                label='Perfect agreement')
         
         # Zone boundaries (converted from MATLAB)
         ax.plot([0, 175/3], [70, 70], 'k-', linewidth=1.5)
-        ax.plot([175/3, 400/1.2], [70, 400], 'k-', linewidth=1.5)
-        ax.plot([70, 70], [84, 400], 'k-', linewidth=1.5)
+        ax.plot([175/3, self._max_range/1.2], [70, self._max_range], 'k-', linewidth=1.5)
+        ax.plot([70, 70], [84, self._max_range], 'k-', linewidth=1.5)
         ax.plot([0, 70], [180, 180], 'k-', linewidth=1.5)
+        # Upper C edge is y_test = y_ref + 110, and the rule only applies up to
+        # y_ref = 290, so this segment ends at (290, 400) whatever the axis limit.
         ax.plot([70, 290], [180, 400], 'k-', linewidth=1.5)
         ax.plot([70, 70], [0, 56], 'k-', linewidth=1.5)
-        ax.plot([70, 400], [56, 320], 'k-', linewidth=1.5)
+        # Lower A edge is y_test = 0.8 * y_ref, so both endpoints scale together.
+        ax.plot([70, self._max_range], [56, 0.8 * self._max_range], 'k-', linewidth=1.5)
         ax.plot([180, 180], [0, 70], 'k-', linewidth=1.5)
-        ax.plot([180, 400], [70, 70], 'k-', linewidth=1.5)
+        ax.plot([180, self._max_range], [70, 70], 'k-', linewidth=1.5)
         ax.plot([240, 240], [70, 180], 'k-', linewidth=1.5)
-        ax.plot([240, 400], [180, 180], 'k-', linewidth=1.5)
+        ax.plot([240, self._max_range], [180, 180], 'k-', linewidth=1.5)
         ax.plot([130, 180], [0, 70], 'k-', linewidth=1.5)
         
         # Zone labels with colored backgrounds

@@ -94,12 +94,31 @@ def test_public_command_creates_manifest_predictions_and_metrics(tmp_path):
     )
     assert aggregate[0]["seeds"] == [41, 42]
     assert aggregate[0]["metrics"]["mae"]["n"] == 2
+    # Implausible-prediction counts are summarised next to the metrics.
+    implausible = aggregate[0]["metrics"]["prediction_diagnostics.n_implausible_predictions"]
+    assert implausible["n"] == 2
+    assert implausible["max"] == 0
+    # Clip accounting is summarised too, so EGA results are never read alone.
+    assert aggregate[0]["metrics"]["prediction_diagnostics.n_predictions_clipped_for_grids"]["n"] == 2
     for seed in (41, 42):
         seed_dir = experiment_dir / f"regular/seed_{seed}"
         assert (seed_dir / "tracking.json").is_file()
         assert (seed_dir / "metrics.json").is_file()
         assert (seed_dir / "metrics.csv").is_file()
         assert (seed_dir / "patient_540/GRU_predictions.csv").is_file()
+        seed_metrics = json.loads((seed_dir / "metrics.json").read_text(encoding="utf-8"))
+        diagnostics = seed_metrics["540"]["prediction_diagnostics"]
+        assert diagnostics["n_implausible_predictions"] == 0
+        assert diagnostics["n_points"] > 0
+        assert 20.0 <= diagnostics["target_min_mg_dl"] <= diagnostics["target_max_mg_dl"] <= 600.0
+        # Targets come from the CGM, so they sit in the sensor range up to the
+        # float error of the standardize/inverse round trip. A reading pinned at
+        # the 400 ceiling comes back as 400.0000092, which is exactly why the
+        # grid metrics clip targets as well as predictions.
+        assert diagnostics["target_min_mg_dl"] >= 40.0 - 1e-3
+        assert diagnostics["target_max_mg_dl"] <= 400.0 + 1e-3
+        assert "n_predictions_clipped_for_grids" in diagnostics
+        assert seed_metrics["540"]["model_info"]["grid_metric_clip_range_mg_dl"] == [40.0, 400.0]
         # Each subrun must record the single seed it actually ran, so that the directory can be replayed on its own.
         resolved = yaml.safe_load(
             (seed_dir / "resolved_config.yaml").read_text(encoding="utf-8")

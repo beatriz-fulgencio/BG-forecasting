@@ -82,11 +82,29 @@ and any model, prediction, or plot artifacts enabled under `output`.
 Optimization settings (`epochs`, `batch_size`, `learning_rate`, early stopping,
 `seeds`, and device) belong under `training`. `training.seeds` is a required,
 non-empty list; use `[42]` for one run or `[42, 43, 44]` for multiple runs.
-Aggregate exports report the mean, population standard deviation, minimum,
-maximum, and count across seeds. Network shape belongs under
+Aggregate exports report the mean, sample standard deviation (`ddof=1`),
+standard error, a 95% Student-t interval, minimum, maximum, and count across
+seeds. A run with one seed reports `null` for the dispersion fields. If a seed
+fails, the others still aggregate and the failure is listed under `failed_runs`,
+with the run marked `completed_with_failures` so a partial result is never read
+as a whole one. Network shape belongs under
 `model.architecture`. See
 [`benchmark/configs/default.yaml`](benchmark/configs/default.yaml) for the
 complete version-1 schema.
+
+Clinical metrics and prediction exports use glucose in mg/dL. Each subrun
+records the prediction horizon in steps and minutes, the target units, and the
+20–600 mg/dL plausibility range used before evaluation. Targets outside that
+range abort the run, because they can only come from broken data or a broken
+inverse transform. Predictions outside it are counted and reported under
+`prediction_diagnostics`, since an implausible prediction is a property of the
+model that the benchmark should measure rather than a reason to stop.
+
+The Clarke and Parkes error grids are defined only on the CGM measurement
+domain, so predictions are clipped to the 40–400 mg/dL sensor range before those
+two metrics and only those two; point-error metrics and the exported CSVs use
+raw model output. The number of clipped predictions is reported in
+`prediction_diagnostics` and aggregated across seeds.
 
 ### Inspect results
 

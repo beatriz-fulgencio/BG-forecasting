@@ -125,10 +125,17 @@ class ExperimentTracker:
         print(f"[INFO] Experiment started: {self.experiment_id}")
         print(f"[INFO] Tracking directory: {self.experiment_dir}")
     
-    def end_experiment(self, final_results: Dict[str, Any]):
-        """Mark experiment completion."""
+    def end_experiment(self, final_results: Dict[str, Any], status: str = 'completed'):
+        """Mark experiment completion.
+
+        Args:
+            final_results: Results to persist with the run.
+            status: Terminal status. Pass 'completed_with_failures' when some
+                subruns failed, so a partial result is never mistaken for a
+                whole one by anything reading tracking.json.
+        """
         self.tracking_data['end_time'] = datetime.now().isoformat()
-        self.tracking_data['status'] = 'completed'
+        self.tracking_data['status'] = status
         self.tracking_data['final_results'] = final_results
         
         # Calculate experiment duration
@@ -141,7 +148,7 @@ class ExperimentTracker:
         self._save_tracking_data()
         self._generate_experiment_summary()
         
-        print(f"Experiment completed: {self.experiment_id}")
+        print(f"Experiment {self.tracking_data['status']}: {self.experiment_id}")
         if 'duration_seconds' in self.tracking_data:
             print(f"  Total duration: {self.tracking_data['duration_seconds']:.1f} seconds")
     

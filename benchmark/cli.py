@@ -69,12 +69,26 @@ def _result_key(metric: str) -> str:
     return {"clarke_ega": "clarke_zones", "parkes_ega": "parkes_zones"}.get(metric, metric)
 
 
+# A run whose seeds partly failed is still readable -- refusing it would strand
+# the seeds that did finish -- but it reports its failures alongside the results.
+TERMINAL_STATUSES = ("completed", "completed_with_failures")
+
+
 def _load_completed(path: str) -> Dict[str, Any]:
     experiment = load_experiment(path)
     status = experiment.get("status")
-    if status != "completed":
+    if status not in TERMINAL_STATUSES:
         raise RuntimeError(f"Experiment {path} is not completed (status: {status!r})")
     return experiment
+
+
+def _with_failures(experiment: Dict[str, Any], analysis: Dict[str, Any]) -> Dict[str, Any]:
+    """Carry failed subruns into the analysis so partial results read as partial."""
+    failed = experiment.get("final_results", {}).get("failed_runs")
+    if failed:
+        analysis["failed_runs"] = failed
+        analysis["partial"] = True
+    return analysis
 
 
 def _analysis(experiment: Dict[str, Any], metrics: List[str]) -> Dict[str, Any]:
@@ -103,7 +117,10 @@ def _analysis(experiment: Dict[str, Any], metrics: List[str]) -> Dict[str, Any]:
                 if nested:
                     row[metric] = nested
             rows.append(row)
-        return {"experiment_id": experiment.get("experiment_id"), "results": rows}
+        return _with_failures(
+            experiment,
+            {"experiment_id": experiment.get("experiment_id"), "results": rows},
+        )
 
     rows: List[Dict[str, Any]] = []
     for model_key, model in experiment.get("models", {}).items():
@@ -121,7 +138,10 @@ def _analysis(experiment: Dict[str, Any], metrics: List[str]) -> Dict[str, Any]:
         rows.append(row)
     if not rows:
         raise RuntimeError("No evaluated models were found in tracking.json")
-    return {"experiment_id": experiment.get("experiment_id"), "results": rows}
+    return _with_failures(
+        experiment,
+        {"experiment_id": experiment.get("experiment_id"), "results": rows},
+    )
 
 
 def _output_path(value: str) -> Path:
@@ -144,13 +164,24 @@ def _run(args: argparse.Namespace) -> int:
     experiment = run_configured_experiment(config, patient_ids)
     for run in experiment["runs"]:
         print(f"Completed {run['mode']} seed {run['seed']}: {run['experiment_dir']}")
+    for failure in experiment.get("failed_runs", []):
+        print(
+            f"FAILED {failure['mode']} seed {failure['seed']}: {failure['error']}",
+            file=sys.stderr,
+        )
     print(f"Parent experiment: {experiment['experiment_dir']}")
-    return 0
+    return 1 if experiment.get("failed_runs") else 0
 
 
 def _analyze(args: argparse.Namespace) -> int:
     metrics = _normalize_metrics(args.metrics)
     result = _analysis(_load_completed(args.experiment_dir), metrics)
+    if result.get("partial"):
+        print(
+            f"Warning: {len(result['failed_runs'])} subrun(s) failed; "
+            "these results cover the successful runs only",
+            file=sys.stderr,
+        )
     print(json.dumps(result, indent=2))
     return 0
 

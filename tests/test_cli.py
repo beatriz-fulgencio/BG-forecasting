@@ -109,3 +109,54 @@ def test_compare_ranks_parent_experiments_by_mean_mae(tmp_path):
     ranking = json.loads(output.read_text(encoding="utf-8"))["mae_ranking"]
     assert [row["experiment_id"] for row in ranking] == ["two", "one"]
     assert ranking[0]["mae_mean"] == 10.0
+
+
+def _partial_tracking(path: Path, experiment_id: str):
+    path.mkdir(parents=True)
+    summary = {"mean": 11.0, "std": 1.4, "sem": 1.0, "ci95_low": -1.7,
+               "ci95_high": 23.7, "min": 10.0, "max": 12.0, "n": 2}
+    (path / "tracking.json").write_text(json.dumps({
+        "experiment_id": experiment_id,
+        "status": "completed_with_failures",
+        "models": {},
+        "final_results": {
+            "aggregate": [{
+                "mode": "regular", "patient_id": 540, "model": "GRU",
+                "seeds": [41, 42], "metrics": {"mae": summary},
+            }],
+            "failed_runs": [{
+                "mode": "regular", "seed": 43,
+                "experiment_dir": str(path / "regular/seed_43"),
+                "error": "RuntimeError: CUDA out of memory",
+            }],
+        },
+    }), encoding="utf-8")
+
+
+def test_analyze_reads_a_partial_run_and_reports_the_failures(capsys, tmp_path):
+    experiment = tmp_path / "experiment"
+    _partial_tracking(experiment, "partial")
+    assert cli.main(["analyze", "--experiment-dir", str(experiment), "--metrics", "mae"]) == 0
+    captured = capsys.readouterr()
+    result = json.loads(captured.out)
+    assert result["partial"] is True
+    assert [f["seed"] for f in result["failed_runs"]] == [43]
+    assert result["results"][0]["mae"]["n"] == 2
+    # The warning goes to stderr so stdout stays machine-readable.
+    assert "1 subrun(s) failed" in captured.err
+
+
+def test_analyze_does_not_mark_a_clean_run_partial(capsys, tmp_path):
+    experiment = tmp_path / "experiment"
+    _parent_tracking(experiment, "clean", 11.0)
+    assert cli.main(["analyze", "--experiment-dir", str(experiment), "--metrics", "mae"]) == 0
+    captured = capsys.readouterr()
+    assert "partial" not in json.loads(captured.out)
+    assert captured.err == ""
+
+
+def test_analyze_still_rejects_an_errored_run(capsys, tmp_path):
+    experiment = tmp_path / "experiment"
+    _tracking(experiment, "one", 12.5, status="error")
+    assert cli.main(["analyze", "--experiment-dir", str(experiment)]) == 1
+    assert "not completed" in capsys.readouterr().err
