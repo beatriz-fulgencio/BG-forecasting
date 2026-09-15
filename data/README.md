@@ -7,10 +7,9 @@ This directory is intended for storing blood glucose datasets used in benchmark 
 ```
 data/
 ├── raw/                    # Original, unprocessed datasets
-│   ├── ohiot1dm/          # Ohio T1DM Dataset
-│   └── custom/            # Custom datasets
-├── processed/             # Preprocessed and cleaned datasets
-└── metadata/              # Dataset descriptions and schemas
+│   └── ohiot1dm/          # OhioT1DM XML data (download separately)
+│       ├── 2018/{train,test}/
+│       └── 2020/{train,test}/
 ```
 
 ## Supported Datasets
@@ -18,53 +17,31 @@ data/
 ### OhioT1DM Dataset
 - **Description**: Type 1 diabetes dataset with continuous glucose monitoring
 - **Source**: Ohio University
-- **Format**: CSV files with CGM, insulin, meal, and activity data
+- **Format**: Original XML files with CGM, insulin, meal, and activity data
 - **Subjects**: Multiple patients with different data availability
 
-### Custom Datasets
-- **Description**: User-provided datasets
-- **Format**: CSV with standardized column names
-- **Required columns**: timestamp, subject_id, glucose
-- **Optional columns**: insulin, carbs, activity, etc.
-
-## Data Format Requirements
-
-All datasets should be converted to a standardized format with the following columns:
-
-### Required Columns
-- `timestamp`: ISO format datetime (YYYY-MM-DD HH:MM:SS)
-- `subject_id`: Unique identifier for each subject
-- `glucose`: Blood glucose value in mg/dL
-
-### Optional Columns
-- `insulin`: Insulin dose in units
-- `carbs`: Carbohydrate intake in grams
-- `activity`: Activity level or type
-- `sleep`: Sleep status or quality
-- `stress`: Stress level
-- `heart_rate`: Heart rate in BPM
+The data is not redistributed in this repository. Request it from the
+[OhioT1DM dataset page](https://webpages.charlotte.edu/rbunescu/data/ohiot1dm/OhioT1DM-dataset.html)
+and follow its data-use terms.
 
 ## Usage
 
 Data loading is handled automatically by the benchmark framework:
 
 ```python
-from benchmark.data.loaders import load_dataset
+from benchmark.data.loaders import load_ohiot1dm_data
 
-# Load dataset
-data = load_dataset('ohiot1dm', subjects=['559', '563'])
+data = load_ohiot1dm_data('data', patient_ids=[540], mode='train', version='2020')
 
-# Data is returned in standardized format
-print(data.columns)  # ['timestamp', 'subject_id', 'glucose', ...]
+print(data[540].columns)
 ```
 
 ## Adding New Datasets
 
-1. Place raw data in appropriate subdirectory
-2. Implement loader in `benchmark/data/loaders.py`
-3. Add validation rules in `benchmark/data/validators.py`
-4. Update configuration schema
-5. Add documentation here
+1. Implement a loader in `benchmark/data/loaders.py`.
+2. Register and validate it in `benchmark/configs/config_manager.py`.
+3. Add unit and integration tests.
+4. Document its on-disk format and access terms here.
 
 ## Notes
 

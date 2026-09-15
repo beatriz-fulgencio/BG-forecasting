@@ -6,7 +6,6 @@ with standardized configurations and reproducible results.
 """
 
 import sys
-import warnings
 import argparse
 import json
 import pandas as pd #type: ignore 
@@ -16,23 +15,17 @@ from pathlib import Path
 from datetime import datetime
 from torch.utils.data import DataLoader  #type: ignore
 
-# Add benchmark to path
-sys.path.append(str(Path(__file__).parent.parent))
-
-# Import benchmark modules
-from data.loaders import load_ohiot1dm_data
-from data.preprocessors import preprocess_ohiot1dm_data
-from data.torch_dataset import prepare_multi_patient_dataset, prepare_personal_data
-
-from models.rnn import RNNBGModel, LSTMBGModel, GRUBGModel
-
-from evaluation.evaluator import BGEvaluator
-from evaluation.visualisation import (
+from ..data.loaders import load_ohiot1dm_data
+from ..data.preprocessors import preprocess_ohiot1dm_data
+from ..data.torch_dataset import prepare_multi_patient_dataset, prepare_personal_data
+from ..models.rnn import RNNBGModel, LSTMBGModel, GRUBGModel
+from ..evaluation.evaluator import BGEvaluator
+from ..evaluation.visualisation import (
     create_prediction_dashboard,
     plot_clarke_analysis,
     plot_parkes_analysis
 )
-from evaluation.reporting import (
+from ..evaluation.reporting import (
     export_metrics_to_csv,
     generate_latex_report,
     generate_model_comparison_report,
@@ -40,8 +33,6 @@ from evaluation.reporting import (
     generate_patient_comparison_report
 )
 from .tracking import ExperimentTracker
-
-warnings.filterwarnings('ignore')
 
 class BGForecastingDataset:
     """
@@ -933,7 +924,7 @@ class ExperimentRunner:
     def _generate_model_comparison_reports(self, comparison_results):
         """Generate model comparison reports across all patients."""
         try:
-            from evaluation.reporting import generate_model_comparison_report, export_comparison_to_file
+            from ..evaluation.reporting import generate_model_comparison_report, export_comparison_to_file
             
             # Aggregate metrics across all patients for each model
             model_aggregated = {}
@@ -1001,7 +992,7 @@ class ExperimentRunner:
     def _generate_patient_comparison_reports(self, comparison_results):
         """Generate patient comparison reports across all models."""
         try:
-            from evaluation.reporting import generate_patient_comparison_report
+            from ..evaluation.reporting import generate_patient_comparison_report
             
             # Prepare patient metrics structure
             patient_metrics = {}
@@ -1044,7 +1035,7 @@ class ExperimentRunner:
     def _generate_latex_reports(self, comparison_results):
         """Generate comprehensive LaTeX reports."""
         try:
-            from evaluation.reporting import generate_latex_report
+            from ..evaluation.reporting import generate_latex_report
             
             # Generate overall experiment report
             self._generate_overall_latex_report(comparison_results)
@@ -1111,7 +1102,7 @@ class ExperimentRunner:
     def _generate_patient_latex_reports(self, comparison_results):
         """Generate individual patient LaTeX reports."""
         try:
-            from evaluation.reporting import generate_latex_report
+            from ..evaluation.reporting import generate_latex_report
             
             for patient_id, patient_results in comparison_results.items():
                 # Prepare data for LaTeX report
@@ -1431,11 +1422,26 @@ def run_experiment_from_config(config_path: str = None, **kwargs):
         config_path: Path to YAML configuration file
         **kwargs: Direct experiment parameters
     """
-    if config_path:
-        # TODO: Load config from YAML file
-        config = {}
-    else:
-        config = kwargs
-    
-    runner = ExperimentRunner(config=config)
-    return runner.run_experiment(**config)
+    if not config_path:
+        raise ValueError("config_path is required; direct parameter execution is not supported")
+    if kwargs:
+        raise ValueError("Configuration overrides are not supported; update the YAML file instead")
+
+    from ..configs import load_config, validate_data_files
+    from .configured import run_configured_experiment
+
+    config = load_config(config_path)
+    return run_configured_experiment(config, validate_data_files(config))
+
+
+def main(argv=None):
+    """Compatibility entry point; the primary interface is ``benchmark.cli``."""
+    parser = argparse.ArgumentParser(description="Run one benchmark experiment")
+    parser.add_argument("--config", required=True, help="path to a versioned YAML config")
+    args = parser.parse_args(argv)
+    run_experiment_from_config(args.config)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

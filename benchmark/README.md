@@ -1,6 +1,6 @@
 # Blood Glucose Forecasting Benchmark
 
-A reproducible benchmark framework for comparing blood glucose prediction models across different datasets, evaluation metrics, and experimental protocols.
+A reproducible benchmark framework for comparing blood glucose prediction models on OhioT1DM across evaluation metrics and experimental protocols.
 
 ## Overview
 
@@ -19,17 +19,23 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-### 2. Run Example Experiment
+### 2. Add the required data
+
+OhioT1DM is not bundled with the repository. Request it from the
+[dataset page](https://webpages.charlotte.edu/rbunescu/data/ohiot1dm/OhioT1DM-dataset.html)
+and place its XML files under `data/raw/ohiot1dm/<version>/{train,test}` as
+shown in the repository-level README. There is no no-data quick start.
+
+### 3. Run Example Experiment
 ```bash
-python -m benchmark.experiments.runner --config configs/example_experiment.yaml
+python -m benchmark.cli run --config benchmark/configs/example_experiment.yaml
 ```
 
-### 3. View Results
-Results are saved in `results/experiments/` with timestamped directories containing:
-- Configuration files
-- Model predictions
-- Evaluation metrics
-- Visualizations
+### 4. View Results
+Results are saved in `results/experiments/` as parent experiments containing:
+- The resolved configuration and parent tracking manifest
+- Aggregate mean, population standard deviation, minimum, maximum, and count across seeds
+- A `<mode>/seed_<n>/` subrun with its own manifest, predictions, metrics, and enabled artifacts
 
 ## Directory Structure
 
@@ -46,31 +52,14 @@ benchmark/
 
 ## Supported Models
 
-### Traditional ML
-- Linear Regression
-- Support Vector Regression
-- Random Forest
-- Gradient Boosting
-- ARIMA/SARIMA
-
 ### Deep Learning
-- LSTM/GRU Networks
-- Transformer Models
-- CNN-based Approaches
-- Attention Mechanisms
-
-### Physiological
-- Compartmental Models
-- PK/PD Models
-- Physics-Informed Neural Networks
-- Hybrid Approaches
+- RNN
+- LSTM
+- GRU
 
 ## Supported Datasets
 
 - **OhioT1DM**: Type 1 diabetes dataset with CGM and lifestyle data
-- **REPLACE-BG**: Multi-center clinical trial data
-- **Tidepool**: Real-world diabetes management data
-- **Custom**: Support for custom CSV formats
 
 ## Evaluation Metrics
 
@@ -83,68 +72,56 @@ benchmark/
 - Clarke Error Grid Analysis (EGA)
 - Parkes Error Grid Analysis (PEGA)
 - Time in Range (TIR) metrics
-- Continuous Glucose Error Grid Analysis (CG-EGA)
 
 ## Configuration
 
-Experiments are configured using YAML files. See `configs/example_experiment.yaml` for a complete example.
+Experiments use a strict, versioned YAML schema. Unknown keys and unsupported
+values are errors rather than ignored options. See
+[`configs/default.yaml`](configs/default.yaml) for every field and
+[`configs/example_experiment.yaml`](configs/example_experiment.yaml) for the
+two-patient smoke run.
 
 ### Key Configuration Sections
-- **Data**: Dataset selection and preprocessing parameters
-- **Model**: Model type and hyperparameters
-- **Evaluation**: Metrics and validation protocols
-- **Output**: Result storage and reporting options
+- **Data**: OhioT1DM version, root, patients, and train/validation ratio
+- **Preprocessing**: Input window, prediction horizon, and feature selection
+- **Model**: Model type and architecture
+- **Training**: Required mode (`regular`, `transfer`, or `both`), required `seeds` list, optimizer settings, and device
+- **Evaluation**: Metrics to compute in mg/dL
+- **Output**: Result storage and artifact options
 
 ## Running Experiments
 
 ### Single Experiment
 ```bash
-python -m benchmark.experiments.runner --config configs/my_experiment.yaml
-```
-
-### Batch Experiments
-```bash
-python -m benchmark.experiments.runner --config-dir configs/batch/
-```
-
-### Cross-Validation
-Enable in configuration:
-```yaml
-evaluation:
-  cross_validation:
-    enabled: true
-    folds: 5
-    strategy: "time_series"
+python -m benchmark.cli run --config benchmark/configs/my_experiment.yaml
 ```
 
 ## Result Analysis
 
 ### View Experiment Results
-```python
-from benchmark.evaluation.reporting import load_results
-results = load_results("results/experiments/2024-01-01_12-00-00_my_experiment")
+```bash
+bg-forecast analyze --experiment-dir results/experiments/experiment_ID
 ```
 
 ### Compare Multiple Models
-```python
-from benchmark.evaluation.reporting import compare_experiments
-comparison = compare_experiments([
-    "experiment1_results/",
-    "experiment2_results/"
-])
+```bash
+bg-forecast compare --experiments \
+  results/experiments/experiment_A \
+  results/experiments/experiment_B
 ```
 
 ## Contributing
 
 ### Adding New Models
-1. Inherit from `BaseModel` in `models/base_model.py`
+1. Inherit from `BaseBGModel` in `models/base_model.py`
 2. Implement required methods: `fit()`, `predict()`, `validate()`
-3. Add configuration support
-4. Include unit tests
+3. Register the implementation in `experiments/configured.py`
+4. Add its architecture fields to `configs/config_manager.py`
+5. Include unit tests
 
 ### Adding New Datasets
 1. Implement loader in `data/loaders.py`
-2. Add validation in `data/validators.py`
+2. Add validation in `configs/config_manager.py`
 3. Update configuration schema
 4. Add documentation
 
@@ -157,7 +134,7 @@ comparison = compare_experiments([
 ## Reproducibility Guidelines
 
 1. **Version Control**: All configurations and code versions are tracked
-2. **Random Seeds**: Fixed seeds for reproducible results
+2. **Random Seeds**: Every value in `training.seeds` produces an independently seeded subrun
 3. **Environment**: Use provided requirements.txt for consistent dependencies
 4. **Documentation**: All experiments must include detailed descriptions
 

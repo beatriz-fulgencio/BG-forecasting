@@ -1,54 +1,52 @@
-# Example configuration for blood glucose forecasting benchmark experiment
-# This file demonstrates the structure for reproducible experiments
+# Small real-data smoke experiment. OhioT1DM must be downloaded separately.
+schema_version: 1
 
 experiment:
-  name: "example_lstm_experiment"
-  description: "Example LSTM model for 30-minute BG prediction"
-  author: "Researcher Name"
-  date: "2024-01-01"
+  name: example_gru_two_patients
+  description: Two-patient GRU smoke run using regular training
+  author: Researcher Name
 
 data:
-  dataset: "ohiot1dm"  # Options: ohiot1dm, custom
-  subjects: "all"      # "all" or list of subject IDs
-  split_strategy: "temporal"  # temporal, random, subject_wise
-  train_ratio: 0.7
-  val_ratio: 0.15
-  test_ratio: 0.15
-  
+  dataset: ohiot1dm
+  root: data
+  version: "2020"
+  patients: [540, 544]
+  train_ratio: 0.9
+  validation_ratio: 0.1
+
 preprocessing:
-  imputation_method: "linear"    # linear, forward_fill, mean
-  outlier_threshold: 3.0         # Standard deviations for outlier detection
-  normalization: "standardize"   # standardize, minmax, none
-  window_size: 12               # Input sequence length (time steps)
-  prediction_horizon: 6         # Prediction horizon (time steps)
-  sampling_rate: 5              # Minutes between samples
+  window_size: 12
+  prediction_horizon: 6
+  sampling_rate: 5
+  unimodal: true
+  include_feature_engineering: true
+  normalization: standardize
 
 model:
-  type: "lstm"                  # lstm, gru, transformer, linear, etc.
+  type: gru
   architecture:
-    hidden_size: 64
-    num_layers: 2
-    dropout: 0.2
-  hyperparameters:
-    learning_rate: 0.001
-    batch_size: 32
-    epochs: 100
-    early_stopping_patience: 10
+    hidden_size: 32
+    num_layers: 1
+    dropout: 0.0
+    batch_first: true
+
+training:
+  mode: regular
+  epochs: 10
+  pretrain_epochs: 10
+  finetune_epochs: 5
+  batch_size: 32
+  learning_rate: 0.001
+  early_stopping_patience: 5
+  seeds: [42]
+  device: auto
 
 evaluation:
-  metrics:
-    - "mae"
-    - "rmse" 
-    - "mape"
-    - "clarke_ega"
-    - "time_in_range"
-  cross_validation:
-    enabled: true
-    folds: 5
-    strategy: "time_series"
-    
+  metrics: [mae, rmse, mard, tir, clarke_ega]
+
 output:
+  directory: results/experiments
   save_model: true
   save_predictions: true
   generate_plots: true
-  export_format: ["csv", "json"]
+  export_format: [json, csv]

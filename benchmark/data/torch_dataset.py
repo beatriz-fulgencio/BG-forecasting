@@ -48,7 +48,8 @@ class OhioDataset(Dataset):
             unimodal: If True, only use glucose values as features
             feature_columns: List of feature columns to use (if None, auto-detect)
         """
-        self.df = raw_df
+        # Dataset construction must not mutate the caller's preprocessed frame.
+        self.df = raw_df.copy()
         
         # Replace missing value markers with NaN
         self.df.replace(to_replace=-1, value=np.nan, inplace=True)
@@ -56,7 +57,7 @@ class OhioDataset(Dataset):
         self.sequence_length = sequence_length
         self.prediction_horizon = prediction_horizon
         self.unimodal = unimodal
-        self.feature_columns = feature_columns
+        self.feature_columns = list(feature_columns) if feature_columns is not None else None
                
         # Extract and preprocess data
         self.data = self._extract_features()  # (len, n_features)
@@ -76,6 +77,7 @@ class OhioDataset(Dataset):
         glucose = self.df["glucose"].to_numpy(dtype=np.float32)
         
         if self.unimodal:
+            self.feature_columns = ["glucose"]
             return np.array([
                 glucose
             ], dtype=np.float32).T
@@ -164,12 +166,14 @@ class OhioDataset(Dataset):
 
         if external_mean is None and external_std is None:
             print(f"    Using dataset to get mean and std")
-            # Compute statistics from this dataset
+            # Valid sequences may coexist with missing values elsewhere in the
+            # time series. Exclude those missing values from the normalization
+            # statistics so they do not silently disable standardization.
             self.mean = []
             self.std = []
             for i in range(self.data.shape[1]):
-                self.mean.append(np.mean(self.data[:, i]))
-                self.std.append(np.std(self.data[:, i]))
+                self.mean.append(np.nanmean(self.data[:, i]))
+                self.std.append(np.nanstd(self.data[:, i]))
         else:
             print(f"    Using externally given mean and std")
             self.mean = external_mean
@@ -177,8 +181,9 @@ class OhioDataset(Dataset):
         
         # Apply standardization
         for i in range(self.data.shape[1]):
+            self.data[:, i] = self.data[:, i] - self.mean[i]
             if self.std[i] > 0:  # Avoid division by zero
-                self.data[:, i] = (self.data[:, i] - self.mean[i]) / self.std[i] # using z-score standardization
+                self.data[:, i] = self.data[:, i] / self.std[i]  # Z-score normalization
 
     def _validate_data(self):
         """Ensure no NaN values in the final sequences."""

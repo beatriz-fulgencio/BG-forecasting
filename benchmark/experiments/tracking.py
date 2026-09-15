@@ -12,6 +12,7 @@ import json
 import time
 import hashlib
 import subprocess
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -22,18 +23,25 @@ class ExperimentTracker:
     Tracks experiment parameters, progress, and results for reproducibility.
     """
     
-    def __init__(self, results_dir: Path, config: Dict[str, Any] = None):
+    def __init__(self, results_dir: Path, config: Dict[str, Any] = None,
+                 experiment_dir: Optional[Path] = None):
         """
         Initialize experiment tracker.
         
         Args:
             results_dir: Directory to save tracking information
             config: Experiment configuration
+            experiment_dir: Exact run directory. When omitted, a timestamped
+                directory is created under ``results_dir``.
         """
         self.results_dir = Path(results_dir)
         self.config = config or {}
         self.experiment_id = self._generate_experiment_id()
-        self.experiment_dir = self.results_dir / f"experiment_{self.experiment_id}"
+        self.experiment_dir = (
+            Path(experiment_dir)
+            if experiment_dir is not None
+            else self.results_dir / f"experiment_{self.experiment_id}"
+        )
         
         # Create experiment directory
         self.experiment_dir.mkdir(parents=True, exist_ok=True)
@@ -58,7 +66,7 @@ class ExperimentTracker:
         """Generate unique experiment ID based on timestamp and config."""
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         config_hash = hashlib.md5(str(self.config).encode()).hexdigest()[:8]
-        return f"{timestamp}_{config_hash}"
+        return f"{timestamp}_{config_hash}_{uuid.uuid4().hex[:6]}"
     
     def _capture_environment(self) -> Dict[str, Any]:
         """Capture environment information for reproducibility."""
@@ -212,6 +220,10 @@ class ExperimentTracker:
     
     def _make_json_serializable(self, obj):
         """Convert object to JSON-serializable format."""
+        # Preserve native JSON scalar types. In particular, Python integers
+        # implement ``__float__`` and were previously written as 540.0.
+        if obj is None or isinstance(obj, (str, bool, int, float)):
+            return obj
         if isinstance(obj, dict):
             return {k: self._make_json_serializable(v) for k, v in obj.items()}
         elif isinstance(obj, list):

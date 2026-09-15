@@ -42,4 +42,9 @@ setup(
     package_data={
         "benchmark": ["configs/*.yaml"],
     },
+    entry_points={
+        "console_scripts": [
+            "bg-forecast=benchmark.cli:main",
+        ],
+    },
 )

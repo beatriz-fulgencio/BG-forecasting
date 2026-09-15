@@ -115,3 +115,5 @@ wandb/
 tmp/
 temp/
 .tmp
+
+results/

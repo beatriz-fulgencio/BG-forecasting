@@ -1,16 +1,13 @@
 """Test data pipeline for model training with PyTorch."""
 
 import os
-import sys
-from pathlib import Path
-
-from loaders import load_ohiot1dm_data
-from preprocessors import preprocess_ohiot1dm_data
+from .loaders import load_ohiot1dm_data
+from .preprocessors import preprocess_ohiot1dm_data
 
 try:
     import torch  # type: ignore
     from torch.utils.data import DataLoader  # type: ignore
-    from torch_dataset import (
+    from .torch_dataset import (
         OhioDataset, 
         prepare_patient_datasets,
         prepare_multi_patient_dataset

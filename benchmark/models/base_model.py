@@ -12,6 +12,7 @@ import pandas as pd  # type: ignore
 from pathlib import Path
 import pickle
 import json
+import copy
 from datetime import datetime
 
 try:
@@ -302,7 +303,11 @@ class BaseBGModel(ABC):
         if device is not None:
             return device
 
-        return 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
+        if torch.cuda.is_available():
+            return 'cuda'
+        if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            return 'mps'
+        return 'cpu'
 
     def _extract_targets(self, data: Union[DataLoader, np.ndarray, pd.DataFrame]) -> np.ndarray:
         """
@@ -403,6 +408,7 @@ class BasePyTorchBGModel(BaseBGModel):
         train_losses = []
         val_losses = []
         best_val_loss = float('inf')
+        best_model_state = None
         patience_counter = 0
         
         for epoch in range(epochs):
@@ -436,6 +442,7 @@ class BasePyTorchBGModel(BaseBGModel):
                 # Early stopping
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
+                    best_model_state = copy.deepcopy(self.model.state_dict())
                     patience_counter = 0
                 else:
                     patience_counter += 1
@@ -447,6 +454,9 @@ class BasePyTorchBGModel(BaseBGModel):
             else:
                 print(f"Epoch {epoch+1}/{epochs}: Train Loss: {avg_train_loss:.6f}")
         
+        if best_model_state is not None:
+            self.model.load_state_dict(best_model_state)
+
         self.is_fitted = True
         self.training_history = {
             'train_losses': train_losses,
