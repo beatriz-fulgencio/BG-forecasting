@@ -69,6 +69,27 @@ def test_load_config_returns_typed_normalized_config(tmp_path):
     assert config.data.patient_ids() == [540, 544]
 
 
+def test_combined_release_selection_resolves_all_twelve_patients(tmp_path):
+    raw = _config(tmp_path)
+    raw["data"].update(version="both", patients="all")
+    config = load_config(_write_config(tmp_path, raw))
+    assert len(config.data.patient_ids()) == 12
+    assert config.data.version_for_patient(559) == "2018"
+    assert config.data.version_for_patient(540) == "2020"
+
+
+def test_combined_release_preflight_checks_each_patient_source(tmp_path):
+    raw = _config(tmp_path)
+    raw["data"].update(version="both", patients=[559, 540])
+    for patient_id, version in [(559, "2018"), (540, "2020")]:
+        for mode, suffix in (("train", "training"), ("test", "testing")):
+            path = tmp_path / "raw" / "ohiot1dm" / version / mode / f"{patient_id}-ws-{suffix}.xml"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.touch()
+    config = load_config(_write_config(tmp_path, raw))
+    assert validate_data_files(config) == [559, 540]
+
+
 def test_training_mode_is_required(tmp_path):
     raw = _config(tmp_path)
     del raw["training"]["mode"]

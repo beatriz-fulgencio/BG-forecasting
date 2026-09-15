@@ -105,18 +105,19 @@ def _resolve_device(requested: str) -> str:
 def _load_patient_frames(config: ExperimentConfig, patient_ids: Iterable[int]) -> Dict[int, Dict[str, pd.DataFrame]]:
     frames: Dict[int, Dict[str, pd.DataFrame]] = {}
     for patient_id in patient_ids:
+        patient_version = config.data.version_for_patient(patient_id)
         raw_train = load_ohiot1dm_data(
             config.data.root,
             patient_ids=[patient_id],
             mode="train",
-            version=config.data.version,
+            version=patient_version,
             sampling_rate=config.preprocessing.sampling_rate,
         )
         raw_test = load_ohiot1dm_data(
             config.data.root,
             patient_ids=[patient_id],
             mode="test",
-            version=config.data.version,
+            version=patient_version,
             sampling_rate=config.preprocessing.sampling_rate,
         )
         if patient_id not in raw_train or patient_id not in raw_test:
@@ -463,6 +464,7 @@ def _run_mode(
         "dataset": config.data.dataset,
         "patient_ids": patient_ids,
         "version": config.data.version,
+        "version_by_patient": {str(pid): config.data.version_for_patient(pid) for pid in patient_ids},
         "sequence_length": config.preprocessing.window_size,
         "prediction_horizon": config.preprocessing.prediction_horizon,
         "prediction_horizon_minutes": config.preprocessing.prediction_horizon * config.preprocessing.sampling_rate,
@@ -563,8 +565,16 @@ def _run_mode(
             patient_result["model_info"] = {
                 "model_name": model_name,
                 "patient_id": patient_id,
+                "ohiot1dm_version": config.data.version_for_patient(patient_id),
                 "mode": mode,
                 "seed": seed,
+                "pretrain_source_patient_ids": [pid for pid in patient_ids if pid != patient_id] if mode == "transfer" else [],
+                "pretrain_source_versions": {
+                    str(pid): config.data.version_for_patient(pid)
+                    for pid in patient_ids if pid != patient_id
+                } if mode == "transfer" else {},
+                "pretrain_source_splits": ["train"] if mode == "transfer" else [],
+                "pretrain_sequence_count": len(global_loader.dataset) if global_loader is not None else 0,
                 "prediction_horizon_steps": config.preprocessing.prediction_horizon,
                 "prediction_horizon_minutes": config.preprocessing.prediction_horizon * config.preprocessing.sampling_rate,
                 "target_units": test_dataset.target_units,
@@ -615,6 +625,7 @@ def run_configured_experiment(config: ExperimentConfig, patient_ids: List[int]) 
         "dataset": config.data.dataset,
         "patient_ids": patient_ids,
         "version": config.data.version,
+        "version_by_patient": {str(pid): config.data.version_for_patient(pid) for pid in patient_ids},
         "sequence_length": config.preprocessing.window_size,
         "prediction_horizon": config.preprocessing.prediction_horizon,
         "batch_size": config.training.batch_size,

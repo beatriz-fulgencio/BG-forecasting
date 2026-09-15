@@ -27,6 +27,7 @@ OHIO_PATIENTS = {
     "2018": (559, 563, 570, 575, 588, 591),
     "2020": (540, 544, 552, 567, 584, 596),
 }
+OHIO_PATIENTS["both"] = tuple(sorted((*OHIO_PATIENTS["2018"], *OHIO_PATIENTS["2020"])))
 
 
 class ConfigError(ValueError):
@@ -125,7 +126,7 @@ class DataConfig:
         root = _string(data.get("root", "data"), "data.root")
         version = str(data.get("version", "2020"))
         if version not in OHIO_PATIENTS:
-            raise ConfigError("data.version must be '2018' or '2020'")
+            raise ConfigError("data.version must be '2018', '2020', or 'both'")
 
         patients_raw = data.get("patients", "all")
         if patients_raw == "all":
@@ -154,6 +155,15 @@ class DataConfig:
 
     def patient_ids(self) -> List[int]:
         return list(OHIO_PATIENTS[self.version]) if self.patients == "all" else list(self.patients)
+
+    def version_for_patient(self, patient_id: int) -> str:
+        """Resolve a selected patient to its original OhioT1DM release."""
+        if patient_id not in self.patient_ids():
+            raise ConfigError(f"Patient {patient_id} is not selected in data.patients")
+        for release in ("2018", "2020"):
+            if patient_id in OHIO_PATIENTS[release]:
+                return release
+        raise ConfigError(f"Unknown OhioT1DM patient {patient_id}")
 
 
 @dataclass(frozen=True)
@@ -404,7 +414,7 @@ def validate_data_files(config: ExperimentConfig) -> List[int]:
     patient_ids = config.data.patient_ids()
     missing: List[Path] = []
     for patient_id in patient_ids:
-        base = root / "raw" / "ohiot1dm" / config.data.version
+        base = root / "raw" / "ohiot1dm" / config.data.version_for_patient(patient_id)
         expected = (
             base / "train" / f"{patient_id}-ws-training.xml",
             base / "test" / f"{patient_id}-ws-testing.xml",
@@ -418,6 +428,7 @@ def validate_data_files(config: ExperimentConfig) -> List[int]:
             "OhioT1DM data is required but the following file(s) are missing:\n"
             f"  {preview}{suffix}\n"
             "Download OhioT1DM separately and place it under "
-            f"{root / 'raw' / 'ohiot1dm' / config.data.version}/{{train,test}}/."
+            f"{root / 'raw' / 'ohiot1dm'}/{{2018,2020}}/{{train,test}}/ "
+            "as required by the selected patients."
         )
     return patient_ids

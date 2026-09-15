@@ -371,8 +371,9 @@ def prepare_multi_patient_dataset(patient_data: dict,
         unimodal: Whether to use only glucose data
         
     Returns:
-        If target_patient_id is None: Combined dataset
-        If target_patient_id is specified: (global_dataset, target_train, target_test)
+        If target_patient_id is None: Combined training-split dataset
+        If target_patient_id is specified: (source-training dataset,
+        target_train, target_test). No patient test split enters pretraining.
     """
     if target_patient_id is not None:
         # Prepare target patient data first for normalization
@@ -386,52 +387,53 @@ def prepare_multi_patient_dataset(patient_data: dict,
         # Use target patient's normalization for all datasets
         mean, std = target_train_dataset.mean, target_train_dataset.std
         
-        # Create datasets for all other patients
+        # Pretrain only on the other patients' training splits. Their test
+        # splits remain held out for their own target-patient evaluations.
         global_datasets = []
         for patient_id, data in patient_data.items():
             if patient_id != target_patient_id:
-                for split in ['train', 'test']:
-                    if split in data:
-                        dataset = OhioDataset(
-                            data[split],
-                            sequence_length=sequence_length,
-                            prediction_horizon=prediction_horizon,
-                            external_mean=mean,
-                            external_std=std,
-                            unimodal=unimodal
-                        )
-                        global_datasets.append(dataset)
+                if 'train' not in data:
+                    raise KeyError(f"Patient {patient_id} has no training split for pretraining")
+                dataset = OhioDataset(
+                    data['train'],
+                    sequence_length=sequence_length,
+                    prediction_horizon=prediction_horizon,
+                    external_mean=mean,
+                    external_std=std,
+                    unimodal=unimodal
+                )
+                global_datasets.append(dataset)
         
         global_dataset = ConcatDataset(global_datasets)
         return global_dataset, target_train_dataset, target_test_dataset
     
     else:
-        # Just combine all patient data
+        # Without a target, combine only training splits as well.
         datasets = []
         first_dataset = None
         
         for patient_id, data in patient_data.items():
-            for split in ['train', 'test']:
-                if split in data:
-                    if first_dataset is None:
-                        # Use first dataset for normalization
-                        dataset = OhioDataset(
-                            data[split],
-                            sequence_length=sequence_length,
-                            prediction_horizon=prediction_horizon,
-                            unimodal=unimodal
-                        )
-                        first_dataset = dataset
-                        mean, std = dataset.mean, dataset.std
-                    else:
-                        dataset = OhioDataset(
-                            data[split],
-                            sequence_length=sequence_length,
-                            prediction_horizon=prediction_horizon,
-                            external_mean=mean,
-                            external_std=std,
-                            unimodal=unimodal
-                        )
-                    datasets.append(dataset)
+            if 'train' not in data:
+                raise KeyError(f"Patient {patient_id} has no training split for pretraining")
+            if first_dataset is None:
+                # Use first training dataset for normalization.
+                dataset = OhioDataset(
+                    data['train'],
+                    sequence_length=sequence_length,
+                    prediction_horizon=prediction_horizon,
+                    unimodal=unimodal
+                )
+                first_dataset = dataset
+                mean, std = dataset.mean, dataset.std
+            else:
+                dataset = OhioDataset(
+                    data['train'],
+                    sequence_length=sequence_length,
+                    prediction_horizon=prediction_horizon,
+                    external_mean=mean,
+                    external_std=std,
+                    unimodal=unimodal
+                )
+            datasets.append(dataset)
         
         return ConcatDataset(datasets)
