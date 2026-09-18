@@ -20,6 +20,8 @@ class OhioBGDataPreprocessor:
     This class provides standardized preprocessing steps for blood glucose
     forecasting tasks, ensuring consistent data quality and format across
     different experiments.
+    
+    This class works specificaly for OhioT1DM database.
     """
     
     def __init__(self, 
@@ -39,16 +41,12 @@ class OhioBGDataPreprocessor:
         self.sampling_rate = sampling_rate
         
         # Data quality parameters
-        self.glucose_range = (40, 400)  # Valid glucose range in mg/dL TODO:check
+        self.glucose_range = (40, 400)  # Valid glucose range in mg/dL 
         self.max_gap_minutes = 15  # Maximum acceptable gap in minutes
     
     def basic_preprocessing(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Apply basic preprocessing to raw loaded data.
-        
-        This method includes all the data alterations that were previously
-        done in the loader, including filling missing values, applying temporal
-        constraints, and data quality checks.
         
         Args:
             df: Raw loaded DataFrame
@@ -74,7 +72,7 @@ class OhioBGDataPreprocessor:
         if 'st' in df.columns:
             df['st'] = df['st'].fillna(-1)  # Skin Temperature
         if 'basal' in df.columns:
-            df['basal'] = df['basal'].fillna(method='ffill')
+            df['basal'] = df['basal'].ffill()
         
         if 'bolus' in df.columns:
             df['bolus'] = df['bolus'].fillna(-1)
@@ -237,7 +235,7 @@ class OhioBGDataPreprocessor:
         df['basal'] = df['basal'].replace(-1, np.nan)
         
         # Forward fill basal rates (a basal rate persists until changed)
-        df['basal'] = df['basal'].fillna(method='ffill')
+        df['basal'] = df['basal'].ffill()
         
         # Convert hourly rates to sampling interval rates    
         df['basal'] = pd.to_numeric(df['basal'], errors='coerce')
@@ -289,46 +287,133 @@ class OhioBGDataPreprocessor:
         
         return df
 
-    def handle_missing_data(self, 
-                           df: pd.DataFrame, 
-                           strategy: str = 'interpolate',
+    def _elapsed_since_last_valid(self, series: pd.Series,
+                                  timestamps: pd.Series) -> pd.Series:
+        """Minutes from each row back to the most recent observed value."""
+        observed_at = timestamps.where(series.notna()).ffill()
+        return (timestamps - observed_at).dt.total_seconds() / 60.0
+
+    def _gap_span_minutes(self, series: pd.Series,
+                          timestamps: pd.Series) -> pd.Series:
+        """Total minutes bridged by the gap each row belongs to.
+
+        For a row inside a run of missing values this is the distance from the
+        last observed value to the next one, so a gap is judged as a whole
+        rather than one step at a time. Rows at the edges of the series, where
+        one side has no observation, get infinity and are never filled.
+        """
+        observed_at = timestamps.where(series.notna())
+        before = observed_at.ffill()
+        after = observed_at.bfill()
+        span = (after - before).dt.total_seconds() / 60.0
+        return span.fillna(np.inf)
+
+    def handle_missing_data(self,
+                           df: pd.DataFrame,
+                           strategy: str = 'none',
                            max_gap: int = None) -> pd.DataFrame:
         """
         Handle missing data in the time series.
-        
+
+        Gaps are judged in elapsed time, not in row count. The data is in 5 min gaps only where the sensor captured new results, so this function is used to hadle the missing data in between reads.
+
         Args:
             df: Input DataFrame
             strategy: Strategy for handling missing data
-                     ('interpolate', 'forward_fill', 'drop')
-            max_gap: Maximum gap size to interpolate (in time steps)
-            
+                     ('none','interpolate', 'forward_fill', 'drop')
+            max_gap: Maximum gap to bridge, in time steps. Defaults to
+                     ``max_gap_minutes // sampling_rate``. Converted to minutes
+                     internally, so it is a real time limit under both a
+                     complete and an interrupted sampling grid.
+
         Returns:
             DataFrame with missing data handled
         """
         df = df.copy()
-        
+
         if max_gap is None:
             max_gap = self.max_gap_minutes // self.sampling_rate
-        
+        if max_gap < 0:
+            raise ValueError(f"max_gap must be non-negative, got {max_gap}")
+        max_gap_minutes = max_gap * self.sampling_rate
+
+        valid_strategies = ('none', 'interpolate', 'forward_fill', 'drop')
+        if strategy not in valid_strategies:
+            raise ValueError(
+                f"Unknown missing-data strategy {strategy!r}; expected one of "
+                "'none', 'interpolate', 'forward_fill', 'drop'"
+            )
+
+        if self.target_column not in df.columns:
+            print(f"    [MISS] No {self.target_column!r} column present; "
+                  f"strategy {strategy!r} has nothing to act on")
+            return df
+
         # Convert -1 values to NaN for the target column
-        if self.target_column in df.columns:
-            df[self.target_column] = df[self.target_column].replace(-1, np.nan)
-        
-        # Apply strategy to glucose column
-        if strategy == 'interpolate':
-            df[self.target_column] = df[self.target_column].interpolate(method='linear', limit=max_gap)
-        
+        df[self.target_column] = df[self.target_column].replace(-1, np.nan)
+        before = df[self.target_column].notna().sum()
+        df[self.target_column] = pd.to_numeric(df[self.target_column],
+                                               errors='coerce')
+        unparseable = before - df[self.target_column].notna().sum()
+        if unparseable:
+            print(f"    [MISS] WARNING: {unparseable} non-numeric "
+                  f"{self.target_column} value(s) coerced to NaN")
+        # A -1 written as text survives the replace above, which compares
+        # against the integer sentinel; catch it once the column is numeric.
+        df[self.target_column] = df[self.target_column].replace(-1, np.nan)
+
+        timestamps = pd.to_datetime(
+            df[self.time_column] if self.time_column in df.columns else df.index
+        )
+        timestamps = pd.Series(timestamps.values, index=df.index)
+
+        target = df[self.target_column]
+        gaps_before = int(target.isna().sum())
+        filled = dropped = 0
+
+        if strategy == 'none':
+            pass
+
+        elif strategy == 'interpolate':
+            # method='time' weights by real elapsed time, so a step that is
+            # wider than the nominal sampling rate is not treated as one tick.
+            bridgeable = self._gap_span_minutes(target, timestamps) <= max_gap_minutes
+            interpolated = target.interpolate(method='time',
+                                              limit_direction='forward')
+            df[self.target_column] = target.where(~(target.isna() & bridgeable),
+                                                  interpolated)
+            filled = gaps_before - int(df[self.target_column].isna().sum())
+
         elif strategy == 'forward_fill':
-            df[self.target_column] = df[self.target_column].fillna(method='ffill', limit=max_gap)
-        
+            # Carry a value forward only while it is still recent enough; the
+            # elapsed time is measured from the observation itself, so a gap
+            # made of absent rows counts the same as one made of NaN rows.
+            within_limit = self._elapsed_since_last_valid(target, timestamps) <= max_gap_minutes
+            carried = target.ffill()
+            df[self.target_column] = target.where(~(target.isna() & within_limit),
+                                                  carried)
+            filled = gaps_before - int(df[self.target_column].isna().sum())
+
         elif strategy == 'drop':
             # Drop rows with missing glucose values
             df = df.dropna(subset=[self.target_column])
+            dropped = gaps_before
 
-        print(f"    [MISS] Using {strategy} strategy with max gap of {max_gap} steps")
+        remaining = int(df[self.target_column].isna().sum())
+
+        if strategy == 'none':
+            print(f"    [MISS] Leaving {remaining} gap row(s) as NaN; windows touching them are skipped downstream")
+        elif strategy == 'drop':
+            print(f"    [MISS] Dropped {dropped} row(s) with a missing "
+                  f"{self.target_column}")
+            print("    [MISS] WARNING: dropping rows closes the gap in the row order without closing it in time, so a downstream window can span an outage without any NaN to stop it; do not report clinical metrics from this run")
+        else:
+            print(f"    [MISS] Using {strategy} strategy with max gap of {max_gap} steps ({max_gap_minutes} min)")
+            print(f"    [MISS] Filled {filled} of {gaps_before} gap row(s); {remaining} left as NaN beyond the {max_gap_minutes}-minute limit")
+            if filled:
+                print("    [MISS] WARNING: filled values become prediction targets and were never measured; do not report clinical metrics from this run")
         return df
     
-    #TODO: verify
     def engineer_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Engineer additional features for blood glucose forecasting.
@@ -358,19 +443,6 @@ class OhioBGDataPreprocessor:
 
             #drop non-cyclical columns
             df = df.drop(columns=['hour'], errors='ignore')
-        
-
-        #TODO: Calculate IOB -------------------------------- 
-        # # Insulin features
-        # insulin_cols = ['bolus', 'basal']
-        # for col in insulin_cols:
-        #     if col in df.columns:
-        #         df[col] = pd.to_numeric(df[col], errors='coerce')
-        #         # Cumulative insulin over different windows
-        #         for window in [6, 12, 24]:  # 30min, 1hr, 2hr windows
-        #             df[f'{col}_cumsum_{window}'] = (
-        #                 df[col].rolling(window=window, min_periods=1).sum()
-        #             )
         
         return df
     
@@ -430,7 +502,7 @@ class OhioBGDataPreprocessor:
     def preprocess_patient_data(self, 
                                df: pd.DataFrame,
                                include_feature_engineering: bool = False,
-                               handle_missing: str = 'interpolate' #TODO check silvio
+                               handle_missing: str = 'none'
                                ) -> pd.DataFrame:
         """
         Complete preprocessing pipeline for a single patient.

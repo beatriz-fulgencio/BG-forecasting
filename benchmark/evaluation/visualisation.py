@@ -43,7 +43,7 @@ except ImportError:
 
 # Import BGMetrics for fallback
 try:
-    from .metrics import BGMetrics
+    from .metrics import BGMetrics, clarke_grid_series
     BGMETRICS_AVAILABLE = True
 except ImportError:
     BGMETRICS_AVAILABLE = False
@@ -266,6 +266,20 @@ def plot_predictions(y_true: np.ndarray,
     return fig
 
 
+def _note_excluded_pairs(title: Optional[str], excluded: int, total: int) -> str:
+    """
+    Add the excluded-pair count to a grid figure's title.
+
+    A grid panel that quietly drops points looks like a clean result, so the
+    figure carries the same admission the metric does.
+    """
+    base = title if title else "Clarke Error Grid"
+    if not excluded:
+        return base
+    return (f"{base}\n({excluded} of {total} pairs outside the grid domain, "
+            f"not shown)")
+
+
 def plot_clarke_analysis(y_true: np.ndarray, 
                          y_pred: np.ndarray,
                          figsize: Tuple[int, int] = (10, 10),
@@ -289,9 +303,17 @@ def plot_clarke_analysis(y_true: np.ndarray,
         return None
     
     if CLARKE_EGA_AVAILABLE:
-        # Use the new implementation
+        # Use the new implementation, on the pairs the grid can classify. The
+        # caller in benchmark/experiments/configured.py does not guard this
+        # call, so an out-of-domain prediction here would fail the whole seed.
+        if BGMETRICS_AVAILABLE:
+            grid_true, grid_pred, n_off_grid = clarke_grid_series(y_true, y_pred)
+        else:
+            grid_true, grid_pred, n_off_grid = y_true, y_pred, 0
+        if n_off_grid:
+            title = _note_excluded_pairs(title, n_off_grid, np.size(y_true))
         ega = ClarkeEGA()
-        fig = ega.plot(y_true, y_pred, figsize=figsize, title=title)
+        fig = ega.plot(grid_true, grid_pred, figsize=figsize, title=title)
         
         if save_path is not None:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
@@ -381,9 +403,19 @@ def create_prediction_dashboard(y_true: np.ndarray,
         warnings.warn("Matplotlib not available. Cannot create dashboard.")
         return None
     
-    # Calculate metrics if not provided
+    # Calculate metrics if not provided.
+    #
+    # Guarded like the grid-drawing blocks below: a dashboard is a figure, and a
+    # figure must never be the thing that fails a training run. The error grids
+    # now exclude out-of-domain pairs themselves, so this guard is for whatever
+    # the next bad input turns out to be, and it costs only the summary table
+    # rather than the whole seed.
     if metrics is None and BGMETRICS_AVAILABLE:
-        metrics = BGMetrics.calculate_comprehensive_metrics(y_true, y_pred)
+        try:
+            metrics = BGMetrics.calculate_comprehensive_metrics(y_true, y_pred)
+        except Exception as e:
+            warnings.warn(f"Failed to compute dashboard metrics table: {e}")
+            metrics = None
     
     # Create enhanced title with prediction horizon
     if title is None:
@@ -470,14 +502,28 @@ def create_prediction_dashboard(y_true: np.ndarray,
         
         ax2.set_title(metrics_text, fontsize=12, fontweight='bold')
     
+    # The time-series and error panels above draw every prediction. The Clarke
+    # panel draws the pairs its grid can classify and says what it left out --
+    # handed raw output it raised inside the guard below, which drew the zone
+    # background and nothing else: no points, no boundaries, no labels. Parkes
+    # places any value, so it keeps the full series.
+    grid_true, grid_pred = y_true, y_pred
+
     # Clarke Error Grid (row 1, left)
     ax3 = fig.add_subplot(gs[1, 0])
     if CLARKE_EGA_AVAILABLE:
         try:
+            if BGMETRICS_AVAILABLE:
+                clarke_true, clarke_pred, n_off_grid = clarke_grid_series(y_true, y_pred)
+            else:
+                clarke_true, clarke_pred, n_off_grid = y_true, y_pred, 0
             # Direct approach - draw the Clarke grid on the given axis
             clarke_ega = ClarkeEGA()
-            ax3 = clarke_ega.plot_on_axes(ax3, y_true, y_pred)
-            ax3.set_title('Clarke Error Grid', fontsize=11, fontweight='bold')
+            ax3 = clarke_ega.plot_on_axes(ax3, clarke_true, clarke_pred)
+            ax3.set_title(
+                _note_excluded_pairs('Clarke Error Grid', n_off_grid, np.size(y_true)),
+                fontsize=11, fontweight='bold',
+            )
         except Exception as e:
             warnings.warn(f"Failed to render Clarke EGA: {e}")
 
@@ -487,7 +533,7 @@ def create_prediction_dashboard(y_true: np.ndarray,
         try:
             # Direct approach - draw the Parkes grid on the given axis
             parkes_ega = ParkesEGA(units_mg_dl=True)
-            ax4 = parkes_ega.plot_on_axes(ax4, y_true, y_pred)
+            ax4 = parkes_ega.plot_on_axes(ax4, grid_true, grid_pred)
             ax4.set_title(f"Parkes Error Grid (Type {diabetes_type})", fontsize=12, fontweight='bold')
         except Exception as e:
             warnings.warn(f"Failed to render Parkes EGA: {e}")

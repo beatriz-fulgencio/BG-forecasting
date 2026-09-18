@@ -6,8 +6,6 @@ This module provides functions for:
 - Creating comparison visualizations
 - Statistical analysis of results
 - Export to common formats (LaTeX, CSV, JSON)
-
-TODO:REVISE THE WHOLE FILE
 """
 
 import os

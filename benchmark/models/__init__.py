@@ -6,7 +6,8 @@ for reproducible comparison of blood glucose prediction approaches.
 
 Main Components:
 - base_model: Abstract base classes for all BG forecasting models
-- rnn: Recurrent neural network implementations (LSTM, GRU)
+- rnn: Recurrent neural network implementations (RNN, LSTM, GRU)
+- transformer: Transformer encoder implementation
 
 Example Usage:
     from benchmark.models import LSTMBGModel
@@ -38,6 +39,7 @@ try:
         LSTMBGModel,
         GRUBGModel
     )
+    from .transformer import TransformerBGModel
     
     __all__ = [
         # Base models
@@ -46,11 +48,12 @@ try:
         # RNN models
         'RNNBGModel',
         'LSTMBGModel',
-        'GRUBGModel'
+        'GRUBGModel',
+        #Transformers
+        'TransformerBGModel'
     ]
     
 except ImportError as e:
-    # If imports fail, provide informative error
     import warnings
     warnings.warn(f"Could not import all model modules: {e}. "
                  "Please ensure all dependencies are installed.")

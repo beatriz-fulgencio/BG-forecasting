@@ -1,8 +1,5 @@
 """
 Base model interface for blood glucose forecasting.
-
-This module defines the standardized interface that all benchmark models
-must implement to ensure consistent evaluation and comparison.
 """
 
 from abc import ABC, abstractmethod
@@ -353,8 +350,6 @@ class BaseBGModel(ABC):
 class BasePyTorchBGModel(BaseBGModel):
     """
     Base class specifically for PyTorch-based blood glucose models.
-    
-    Provides common PyTorch functionality like training loops, device management, and standard neural network operations.
     """
     
     def __init__(self, *args, **kwargs):
@@ -375,20 +370,27 @@ class BasePyTorchBGModel(BaseBGModel):
             epochs: int = 100,
             learning_rate: float = 0.001,
             early_stopping_patience: int = 10,
+            grad_clip_norm: Optional[float] = 1.0,
+            lr_scheduler_factor: float = 0.5,
+            lr_scheduler_patience: int = 1,
             **kwargs) -> Dict[str, Any]:
         """
         Train the PyTorch model.
-        
         Args:
             train_loader: Training data loader
             validation_loader: Optional validation data loader
             epochs: Number of training epochs
-            learning_rate: Learning rate for optimizer
-            early_stopping_patience: Patience for early stopping
+            learning_rate: Learning rate for this stage's optimizer
+            early_stopping_patience: Patience for early stopping. 
+            grad_clip_norm: Max gradient norm, or ``None`` to disable. 
+            lr_scheduler_factor: decay factor.
+            lr_scheduler_patience: patience.
+             
             **kwargs: Additional training parameters
-            
+
         Returns:
             Training history dictionary
+
         """
         if self.model is None:
             raise ValueError("Model not built. Call _build_model() first.")
@@ -396,9 +398,13 @@ class BasePyTorchBGModel(BaseBGModel):
         # Setup training components
         self.model.to(self.device)
 
-        # Use Adam optimizer as default
+        # A fresh optimizer per stage
         if self.optimizer is None:
             self.optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            self.optimizer, mode="min",
+            factor=lr_scheduler_factor, patience=lr_scheduler_patience,
+        )
         
         # Use MSE loss as default
         if self.criterion is None:
@@ -427,6 +433,8 @@ class BasePyTorchBGModel(BaseBGModel):
                 
                 # Backward pass
                 loss.backward()
+                if grad_clip_norm is not None:
+                    nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=grad_clip_norm)
                 self.optimizer.step() # Update model parameters
 
                 train_loss += loss.item()
@@ -438,6 +446,7 @@ class BasePyTorchBGModel(BaseBGModel):
             if validation_loader is not None:
                 val_loss = self._validate_epoch(validation_loader)
                 val_losses.append(val_loss)
+                scheduler.step(val_loss)
                 
                 # Early stopping
                 if val_loss < best_val_loss:
@@ -457,12 +466,15 @@ class BasePyTorchBGModel(BaseBGModel):
         if best_model_state is not None:
             self.model.load_state_dict(best_model_state)
 
+        # Drop this stage's optimizer so the next fit() builds its own.
+        self.optimizer = None
+
         self.is_fitted = True
         self.training_history = {
             'train_losses': train_losses,
             'val_losses': val_losses,
             'epochs_completed': len(train_losses),
-            'best_val_loss': best_val_loss
+            'best_val_loss': best_val_loss if np.isfinite(best_val_loss) else None
         }
         
         return self.training_history
@@ -495,7 +507,7 @@ class BasePyTorchBGModel(BaseBGModel):
         predictions = np.concatenate(predictions, axis=0)
         
         if return_uncertainty:
-            # Placeholder for uncertainty - subclasses can override
+            # Placeholder for uncertainty (subclasses can override)
             uncertainty = np.zeros_like(predictions)
             return predictions, uncertainty
         

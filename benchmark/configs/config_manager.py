@@ -1,22 +1,16 @@
-"""Typed, validated experiment configuration.
-
-The YAML file is a public interface: unknown keys and unsupported values are
-rejected instead of being silently ignored. Dataclasses keep the schema
-lightweight and make it straightforward to extend without introducing a
-second configuration framework.
-"""
+"""Experiment configuration."""
 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Sequence, Union
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
 
 import yaml
 
 
 SCHEMA_VERSION = 1
-SUPPORTED_MODELS = ("rnn", "lstm", "gru")
+SUPPORTED_MODELS = ("rnn", "lstm", "gru", "transformer")
 SUPPORTED_DATASETS = ("ohiot1dm",)
 SUPPORTED_METRICS = (
     "mae", "rmse", "mape", "mard", "tir", "clarke_ega", "parkes_ega"
@@ -40,25 +34,25 @@ def _mapping(value: Any, path: str) -> Mapping[str, Any]:
     return value
 
 
-def _reject_unknown(data: Mapping[str, Any], allowed: Sequence[str], path: str) -> None:
+def _reject_unknown(data: Mapping[str, Any], allowed: Sequence[str], path: str):
     unknown = sorted(set(data) - set(allowed))
     if unknown:
         raise ConfigError(f"Unknown key(s) in {path}: {', '.join(unknown)}")
 
 
-def _positive_int(value: Any, path: str) -> int:
+def _positive_int(value: Any, path: str):
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise ConfigError(f"{path} must be a positive integer")
     return value
 
 
-def _non_negative_int(value: Any, path: str) -> int:
+def _non_negative_int(value: Any, path: str):
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise ConfigError(f"{path} must be a non-negative integer")
     return value
 
 
-def _probability(value: Any, path: str) -> float:
+def _probability(value: Any, path: str):
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ConfigError(f"{path} must be a number between 0 and 1")
     result = float(value)
@@ -67,13 +61,13 @@ def _probability(value: Any, path: str) -> float:
     return result
 
 
-def _boolean(value: Any, path: str) -> bool:
+def _boolean(value: Any, path: str):
     if not isinstance(value, bool):
         raise ConfigError(f"{path} must be true or false")
     return value
 
 
-def _string(value: Any, path: str) -> str:
+def _string(value: Any, path: str):
     if not isinstance(value, str) or not value.strip():
         raise ConfigError(f"{path} must be a non-empty string")
     return value.strip()
@@ -215,6 +209,39 @@ class ModelConfig:
         if model_type not in SUPPORTED_MODELS:
             raise ConfigError(f"model.type must be one of: {', '.join(SUPPORTED_MODELS)}")
         architecture = dict(_mapping(data.get("architecture", {}), "model.architecture"))
+        if model_type == "transformer":
+            allowed = {
+                "d_model", "nhead", "num_layers", "dim_feedforward", "dropout",
+                "attention_dropout", "batch_first",
+            }
+            _reject_unknown(architecture, tuple(allowed), "model.architecture")
+            d_model = _positive_int(architecture.get("d_model", 128), "model.architecture.d_model")
+            nhead = _positive_int(architecture.get("nhead", 4), "model.architecture.nhead")
+            if d_model % nhead:
+                raise ConfigError("model.architecture.d_model must be divisible by nhead")
+            num_layers = _positive_int(architecture.get("num_layers", 3), "model.architecture.num_layers")
+            dim_feedforward = _positive_int(
+                architecture.get("dim_feedforward", d_model * 4),
+                "model.architecture.dim_feedforward",
+            )
+            dropout = _probability(architecture.get("dropout", 0.1), "model.architecture.dropout")
+            attention_dropout = _probability(
+                architecture.get("attention_dropout", 0.1), "model.architecture.attention_dropout"
+            )
+            batch_first = _boolean(
+                architecture.get("batch_first", True), "model.architecture.batch_first"
+            )
+            if not batch_first:
+                raise ConfigError("model.architecture.batch_first currently supports only true")
+            return cls(model_type, {
+                "d_model": d_model,
+                "nhead": nhead,
+                "num_layers": num_layers,
+                "dim_feedforward": dim_feedforward,
+                "dropout": dropout,
+                "attention_dropout": attention_dropout,
+                "batch_first": batch_first,
+            })
         allowed = {"hidden_size", "num_layers", "dropout", "batch_first"}
         if model_type == "rnn":
             allowed.add("nonlinearity")
@@ -253,6 +280,11 @@ class TrainingConfig:
     finetune_epochs: int = 25
     batch_size: int = 32
     learning_rate: float = 0.001
+    #: Learning rate for the fine-tuning stage of a transfer run. ``None`` reuses
+    #: ``learning_rate``. Cui et al. (https://github.com/r-cui/GluPred, MIT) drop
+    #: it for fine-tuning -- 3e-4 pre-train, 5e-5 fine-tune -- which is the
+    #: schedule this project's transfer mode follows.
+    finetune_learning_rate: Optional[float] = None
     early_stopping_patience: int = 10
     device: str = "auto"
 
@@ -262,7 +294,8 @@ class TrainingConfig:
         _reject_unknown(
             data,
             ("mode", "seeds", "epochs", "pretrain_epochs", "finetune_epochs", "batch_size",
-             "learning_rate", "early_stopping_patience", "device"),
+             "learning_rate", "finetune_learning_rate", "early_stopping_patience",
+             "device"),
             "training",
         )
         if "mode" not in data:
@@ -287,6 +320,16 @@ class TrainingConfig:
         learning_rate = data.get("learning_rate", 0.001)
         if isinstance(learning_rate, bool) or not isinstance(learning_rate, (int, float)) or learning_rate <= 0:
             raise ConfigError("training.learning_rate must be a positive number")
+
+        finetune_learning_rate = data.get("finetune_learning_rate")
+        if finetune_learning_rate is not None:
+            if (isinstance(finetune_learning_rate, bool)
+                    or not isinstance(finetune_learning_rate, (int, float))
+                    or finetune_learning_rate <= 0):
+                raise ConfigError(
+                    "training.finetune_learning_rate must be a positive number"
+                )
+            finetune_learning_rate = float(finetune_learning_rate)
         device = _string(data.get("device", "auto"), "training.device").lower()
         if device not in {"auto", "cpu", "cuda", "mps"}:
             raise ConfigError("training.device must be auto, cpu, cuda, or mps")
@@ -298,6 +341,7 @@ class TrainingConfig:
             _positive_int(data.get("finetune_epochs", 25), "training.finetune_epochs"),
             _positive_int(data.get("batch_size", 32), "training.batch_size"),
             float(learning_rate),
+            finetune_learning_rate,
             _positive_int(data.get("early_stopping_patience", 10), "training.early_stopping_patience"),
             device,
         )

@@ -8,7 +8,7 @@ deep learning models on blood glucose time series data.
 
 import datetime
 import os
-from typing import Optional, List, Tuple, Union
+from typing import Any, Dict, Optional, List, Tuple, Union
 
 import numpy as np
 import pandas as pd # type: ignore
@@ -286,6 +286,76 @@ class OhioDataset(Dataset):
                 target_sequence = np.concatenate([target_sequence, padding])
                 
             return torch.from_numpy(target_sequence)
+
+    def _raw_glucose_and_timestamps(self) -> Tuple[np.ndarray, pd.DatetimeIndex]:
+        """Convert the whole glucose column and index once.
+        """
+        glucose = pd.to_numeric(self.df["glucose"], errors="coerce").to_numpy(dtype=float)
+        timestamps = pd.to_datetime(self.df.index, errors="coerce")
+        return glucose, timestamps
+
+    def get_prediction_context(self, idx: int) -> Dict[str, Any]:
+        """Return the raw glucose and timestamps behind one forecast row.
+        """
+        glucose, timestamps = self._raw_glucose_and_timestamps()
+        return self._context_at(idx, glucose, timestamps)
+
+    def _context_at(self, idx: int, glucose: np.ndarray,
+                    timestamps: pd.DatetimeIndex) -> Dict[str, Any]:
+        """Build one context row from already-converted glucose and timestamps."""
+        if idx < 0:
+            idx += len(self)
+        if idx < 0 or idx >= len(self):
+            raise IndexError(idx)
+
+        start_idx, _target_idx = self.valid_sequences[idx]
+        origin_idx = start_idx + self.sequence_length - 1
+        final_target_idx = origin_idx + self.prediction_horizon
+        preceding_target_idx = final_target_idx - 1
+
+        selected_timestamps = timestamps[
+            [origin_idx, preceding_target_idx, final_target_idx]
+        ]
+        if pd.isna(selected_timestamps).any():
+            raise ValueError(f"Sequence {idx} contains an invalid timestamp")
+
+        history = glucose[start_idx:origin_idx + 1]
+        if len(history) != self.sequence_length or not np.all(np.isfinite(history)):
+            raise ValueError(f"Sequence {idx} has an incomplete glucose history")
+
+        return {
+            "sequence_id": idx,
+            "history_glucose_mg_dl": tuple(float(value) for value in history),
+            "forecast_origin_timestamp": selected_timestamps[0],
+            "forecast_origin_glucose_mg_dl": float(glucose[origin_idx]),
+            "preceding_target_timestamp": selected_timestamps[1],
+            "preceding_target_glucose_mg_dl": float(glucose[preceding_target_idx]),
+            "target_timestamp": selected_timestamps[2],
+            "true_values": float(glucose[final_target_idx]),
+        }
+
+    def prediction_context_frame(self) -> pd.DataFrame:
+        """Return one timestamp-aware context row per model prediction.
+
+        Glucose-history columns use zero-based chronological positions, so
+        ``history_glucose_00_mg_dl`` is the oldest observation and the last
+        history column is the forecast origin.
+        """
+        # One conversion for the whole frame rather than one per row, which
+        # made this quadratic in the length of the patient record.
+        glucose, timestamps = self._raw_glucose_and_timestamps()
+        rows = []
+        for index in range(len(self)):
+            context = self._context_at(index, glucose, timestamps)
+            history = context.pop("history_glucose_mg_dl")
+            row = {"sequence_id": context.pop("sequence_id")}
+            row.update({
+                f"history_glucose_{offset:02d}_mg_dl": value
+                for offset, value in enumerate(history)
+            })
+            row.update(context)
+            rows.append(row)
+        return pd.DataFrame(rows)
 
 def prepare_patient_datasets(train_df: pd.DataFrame, 
                            test_df: pd.DataFrame,

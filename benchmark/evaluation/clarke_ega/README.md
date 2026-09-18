@@ -11,7 +11,7 @@ The Clarke Error Grid Analysis (EGA) is a widely accepted method for assessing t
 The Clarke EGA divides the prediction space into five zones based on clinical impact:
 
 ### Zone A: Clinically Accurate
-- **Definition**: Values that differ from reference by ≤20% or both values are <70 mg/dL
+- **Definition**: Values that differ from reference by ≤20% or both values are ≤70 mg/dL
 - **Clinical Impact**: No clinical impact; accurate measurements
 - **Target**: >95% of predictions
 - **Treatment Decision**: Correct

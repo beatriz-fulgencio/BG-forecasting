@@ -1,8 +1,7 @@
 """
 Data loaders
 
-This module provides standardized data loading functions for the Ohio T1DM 
-blood glucose datasets commonly used in research. The loaders return
+This module provides standardized data loading functions for the Ohio T1DM blood glucose datasets commonly used in research. The loaders return
 raw combined dataframes without any data alterations.
 
 All data preprocessing and alterations should be done using the 

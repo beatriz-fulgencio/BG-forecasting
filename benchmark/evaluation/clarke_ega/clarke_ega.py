@@ -125,9 +125,21 @@ class ClarkeEGA:
         # The Clarke grid is published on 0-400 mg/dL and the zone rules are
         # only defined there, so the range is not a tunable. The OhioT1DM CGM
         # reports [40, 400] and saturates at both ends, so no target can fall
-        # outside it; callers clip predictions to the sensor range instead.
+        # outside it. Predictions are not clipped onto this domain: callers
+        # exclude and report the pairs that fall outside it, because clipping
+        # moves a point to a better zone and quietly flatters the result.
         self._max_range = 400  # mg/dL
-        
+
+    @property
+    def max_range(self) -> float:
+        """Upper bound of the domain ``analyze`` accepts; the grid's published limit."""
+        return self._max_range
+
+    @property
+    def min_range(self) -> float:
+        """Lower bound of the domain ``analyze`` accepts."""
+        return 0.0
+
     def analyze(self, y_true: Union[float, np.ndarray], 
                 y_pred: Union[float, np.ndarray]) -> Dict[str, Union[int, float, np.ndarray]]:
         """

@@ -3,7 +3,7 @@ Deep learning models for blood glucose forecasting.
 
 Implementations of neural network approaches including:
 - LSTM/GRU networks
-- Transformer models TODO
+- Transformer models (implemented in ``transformer.py``)
 - CNN-based models TODO
 - Attention mechanisms TODO
 - Hybrid architectures TODO
@@ -148,4 +148,3 @@ except ImportError:
     class GRUBGModel:
         def __init__(self, *args, **kwargs):
             raise ImportError("PyTorch required for GRUBGModel")
-
