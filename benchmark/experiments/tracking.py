@@ -43,10 +43,6 @@ class ExperimentTracker:
             else self.results_dir / f"experiment_{self.experiment_id}"
         )
         
-        # Create experiment directory
-        self.experiment_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Initialize tracking data
         self.tracking_data = {
             'experiment_id': self.experiment_id,
             'start_time': None,
@@ -58,9 +54,6 @@ class ExperimentTracker:
             'results': {},
             'status': 'initialized'
         }
-        
-        # Save initial tracking data
-        self._save_tracking_data()
     
     def _generate_experiment_id(self) -> str:
         """Generate unique experiment ID based on timestamp and config."""
@@ -116,6 +109,10 @@ class ExperimentTracker:
         
         return env_info
     
+    def _ensure_experiment_dir(self):
+        """Create the run directory the first time something needs it."""
+        self.experiment_dir.mkdir(parents=True, exist_ok=True)
+
     def start_experiment(self):
         """Mark experiment start."""
         self.tracking_data['start_time'] = datetime.now().isoformat()
@@ -134,17 +131,8 @@ class ExperimentTracker:
                 subruns failed, so a partial result is never mistaken for a
                 whole one by anything reading tracking.json.
         """
-        self.tracking_data['end_time'] = datetime.now().isoformat()
-        self.tracking_data['status'] = status
         self.tracking_data['final_results'] = final_results
-        
-        # Calculate experiment duration
-        if self.tracking_data['start_time']:
-            start_time = datetime.fromisoformat(self.tracking_data['start_time'])
-            end_time = datetime.fromisoformat(self.tracking_data['end_time'])
-            duration = (end_time - start_time).total_seconds()
-            self.tracking_data['duration_seconds'] = duration
-        
+        self._close_out(status)
         self._save_tracking_data()
         self._generate_experiment_summary()
         
@@ -152,6 +140,25 @@ class ExperimentTracker:
         if 'duration_seconds' in self.tracking_data:
             print(f"  Total duration: {self.tracking_data['duration_seconds']:.1f} seconds")
     
+    def mark_interrupted(self, reason: str = None):
+        """Close out a run that was killed rather than finished."""
+        self.tracking_data['interrupted_by'] = reason or 'interrupted before completion'
+        self._close_out('interrupted')
+        self._save_tracking_data()
+
+        print(f"[WARNING] Experiment interrupted: {self.experiment_id}"
+              f" ({self.tracking_data['interrupted_by']})")
+
+    def _close_out(self, status: str):
+        """Stamp the terminal status, end time and duration onto the record."""
+        self.tracking_data['end_time'] = datetime.now().isoformat()
+        self.tracking_data['status'] = status
+
+        if self.tracking_data['start_time']:
+            start_time = datetime.fromisoformat(self.tracking_data['start_time'])
+            end_time = datetime.fromisoformat(self.tracking_data['end_time'])
+            self.tracking_data['duration_seconds'] = (end_time - start_time).total_seconds()
+
     def log_data_params(self, params: Dict[str, Any]):
         """Log data loading parameters."""
         self.tracking_data['data_params'] = params
@@ -217,6 +224,7 @@ class ExperimentTracker:
     
     def _save_tracking_data(self):
         """Save tracking data to file."""
+        self._ensure_experiment_dir()
         tracking_file = self.experiment_dir / "tracking.json"
         
         # Convert to JSON-serializable format
@@ -244,7 +252,6 @@ class ExperimentTracker:
         else:
             return obj
     
-    #TODO:CHECK
     def _generate_experiment_summary(self):
         """Generate human-readable experiment summary."""
         summary_lines = [
@@ -294,17 +301,13 @@ class ExperimentTracker:
             for model_key, model_info in self.tracking_data['models'].items():
                 if model_info.get('evaluation_results'):
                     results = model_info['evaluation_results']
-                    mae = results.get('mae', 'N/A')
-                    mard = results.get('mard', 'N/A')
-                    tir = results.get('tir', 'N/A')
-                    
-                    summary_lines.extend([
-                        f"### {model_key}",
-                        f"- **MAE**: {mae:.3f} mg/dL" if isinstance(mae, (int, float)) else f"- **MAE**: {mae}",
-                        f"- **MARD**: {mard:.2f}%" if isinstance(mard, (int, float)) else f"- **MARD**: {mard}",
-                        f"- **TIR**: {tir:.1f}%" if isinstance(tir, (int, float)) else f"- **TIR**: {tir}",
-                        ""
-                    ])
+                    summary_lines.append(f"### {model_key}")
+                    summary_lines.append(
+                        self._format_metric("MAE", results.get('mae'), "mg/dL"))
+                    summary_lines.append(
+                        self._format_metric("MARD", results.get('mard'), "%", decimals=2))
+                    summary_lines.extend(self._format_range_deltas(results.get('tir')))
+                    summary_lines.append("")
         
         # Add errors if any
         if 'errors' in self.tracking_data and self.tracking_data['errors']:
@@ -320,12 +323,52 @@ class ExperimentTracker:
                 ])
         
         # Save summary
+        self._ensure_experiment_dir()
         summary_file = self.experiment_dir / "summary.md"
         with open(summary_file, 'w') as f:
             f.write('\n'.join(summary_lines))
         
         print(f"  Experiment summary saved: {summary_file}")
     
+    @staticmethod
+    def _as_number(value: Any) -> Optional[float]:
+        """Fit a metric to float, or None when it is not a number."""
+        if isinstance(value, bool) or isinstance(value, str) or value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @classmethod
+    def _format_metric(cls, label: str, value: Any, unit: str,
+                       decimals: int = 3) -> str:
+        """Render one scalar metric, or say plainly that it is not there."""
+        number = cls._as_number(value)
+        if number is None:
+            return f"- **{label}**: N/A"
+        separator = "" if unit == "%" else " "
+        return f"- **{label}**: {number:.{decimals}f}{separator}{unit}"
+
+    _RANGE_BANDS = (
+        ("time_in_range", "TIR"),
+        ("time_below_range", "TBR"),
+        ("time_above_range", "TAR"),
+    )
+
+    @classmethod
+    def _format_range_deltas(cls, deltas: Any) -> list:
+        """Render the glucose-range occupancy deltas as signed percentage point"""
+        if not isinstance(deltas, dict):
+            return ["- **Range occupancy (predicted - reference)**: N/A"]
+
+        lines = ["- **Range occupancy (predicted - reference), percentage points**:"]
+        for key, label in cls._RANGE_BANDS:
+            number = cls._as_number(deltas.get(key))
+            lines.append(f"  - **{label}**: N/A" if number is None
+                         else f"  - **{label}**: {number:+.2f} pp")
+        return lines
+
     def get_experiment_info(self) -> Dict[str, Any]:
         """Get current experiment information."""
         return {
@@ -337,7 +380,8 @@ class ExperimentTracker:
         }
 
     def get_experiment_dir(self) -> Path:
-        """Get the experiment directory."""
+        """Get the experiment directory, creating it if it is not there yet."""
+        self._ensure_experiment_dir()
         return self.experiment_dir
 
 

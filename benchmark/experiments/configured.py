@@ -21,6 +21,7 @@ from ..data.preprocessors import preprocess_ohiot1dm_data
 from ..data.torch_dataset import prepare_multi_patient_dataset, prepare_personal_data
 from ..evaluation.evaluator import BGEvaluator
 from ..models.rnn import GRUBGModel, LSTMBGModel, RNNBGModel
+from ..models.transformer import TransformerBGModel
 from .tracking import ExperimentTracker
 
 
@@ -28,6 +29,7 @@ MODEL_REGISTRY = {
     "rnn": RNNBGModel,
     "lstm": LSTMBGModel,
     "gru": GRUBGModel,
+    "transformer": TransformerBGModel,
 }
 
 # Broad measurement plausibility bounds in the units used by the clinical
@@ -35,9 +37,11 @@ MODEL_REGISTRY = {
 GLUCOSE_PLAUSIBLE_RANGE_MG_DL = (20.0, 600.0)
 
 # The OhioT1DM CGM reports only within this interval and saturates at both ends,
-# so every target is already censored to it. Predictions are clipped to the same
-# interval before the error-grid analyses, which are themselves defined only on
-# the measurement domain. Point-error metrics keep the raw predictions.
+# so every target is already censored to it. Predictions are NOT clipped to it:
+# every metric is computed from the raw prediction vector, and the error grids
+# exclude and report whatever falls outside their own domain. This range is kept
+# only to count how far outside the measurement range a model's output strayed,
+# which is how a model that needs constraining makes itself known.
 CGM_SENSOR_RANGE_MG_DL = (40.0, 400.0)
 
 
@@ -220,6 +224,39 @@ def _targets(loader: DataLoader) -> np.ndarray:
     return np.concatenate(batches, axis=0)
 
 
+def _prediction_export_frame(
+    test_dataset, y_true: np.ndarray, y_pred: np.ndarray
+) -> pd.DataFrame:
+    """Build the stable, timestamp-aware prediction CSV schema."""
+    y_true = np.asarray(y_true, dtype=float)
+    y_pred = np.asarray(y_pred, dtype=float)
+    if y_true.ndim != 1 or y_pred.ndim != 1 or y_true.shape != y_pred.shape:
+        raise ValueError(
+            f"Prediction export requires equal one-dimensional arrays, got "
+            f"targets {y_true.shape} and predictions {y_pred.shape}"
+        )
+
+    context = test_dataset.prediction_context_frame()
+    if len(context) != len(y_true):
+        raise ValueError(
+            f"Prediction context has {len(context)} rows for {len(y_true)} targets"
+        )
+    context_truth = context.pop("true_values").to_numpy(dtype=float)
+    if not np.array_equal(context_truth, y_true, equal_nan=True):
+        mismatch = int(np.flatnonzero(context_truth != y_true)[0])
+        raise ValueError(
+            f"Prediction context target mismatch at row {mismatch}: "
+            f"{context_truth[mismatch]} != {y_true[mismatch]}"
+        )
+
+    frame = pd.DataFrame({
+        "true_glucose_mg_dl": y_true,
+        "predicted_glucose_mg_dl": y_pred,
+        "absolute_error_mg_dl": np.abs(y_true - y_pred),
+    })
+    return pd.concat([frame, context.reset_index(drop=True)], axis=1)
+
+
 def _validate_evaluation_arrays(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
     """Check evaluation arrays and report on implausible predictions.
     """
@@ -242,7 +279,7 @@ def _validate_evaluation_arrays(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[
     implausible = int(np.count_nonzero((y_pred < lower) | (y_pred > upper)))
     prediction_min, prediction_max = float(np.min(y_pred)), float(np.max(y_pred))
     sensor_low, sensor_high = CGM_SENSOR_RANGE_MG_DL
-    clipped = int(np.count_nonzero((y_pred < sensor_low) | (y_pred > sensor_high)))
+    outside_sensor = int(np.count_nonzero((y_pred < sensor_low) | (y_pred > sensor_high)))
     if implausible:
         print(
             f"  [WARNING] {implausible} of {y_pred.size} predictions fall outside the "
@@ -250,18 +287,19 @@ def _validate_evaluation_arrays(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[
             f"(predicted [{prediction_min:.1f}, {prediction_max:.1f}]); "
             "they are reported, not discarded"
         )
-    if clipped:
+    if outside_sensor:
         print(
-            f"  [INFO] {clipped} of {y_pred.size} predictions fall outside the CGM "
-            f"range [{sensor_low:g}, {sensor_high:g}] mg/dL and are clipped for the "
-            "error-grid metrics only; point-error metrics use the raw values"
+            f"  [INFO] {outside_sensor} of {y_pred.size} predictions fall outside the "
+            f"CGM range [{sensor_low:g}, {sensor_high:g}] mg/dL; they are evaluated as "
+            "produced, and any that fall outside an error grid's own domain are "
+            "excluded from that grid's percentages and counted in its metrics"
         )
     return {
         "n_points": int(y_pred.size),
         "n_implausible_predictions": implausible,
         "implausible_prediction_rate": implausible / y_pred.size if y_pred.size else 0.0,
-        "n_predictions_clipped_for_grids": clipped,
-        "clipped_prediction_rate": clipped / y_pred.size if y_pred.size else 0.0,
+        "n_predictions_outside_sensor_range": outside_sensor,
+        "outside_sensor_range_rate": outside_sensor / y_pred.size if y_pred.size else 0.0,
         "prediction_min_mg_dl": prediction_min,
         "prediction_max_mg_dl": prediction_max,
         "target_min_mg_dl": target_min,
@@ -312,20 +350,41 @@ def _save_plots(
         return {}
     # Plotting is optional and relatively expensive to import, so keep it off
     # the training path when output.generate_plots is false.
+    import matplotlib.pyplot as plt
+
     from ..evaluation.visualisation import (
         create_prediction_dashboard,
         plot_clarke_analysis,
         plot_parkes_analysis,
     )
 
+    def render(plot_fn, *args, **kwargs):
+        """Draw one figure, save it, and release it.
+
+        The plotting helpers return their figure for interactive use, so nothing
+        in the library closes it and pyplot keeps every one alive for the life of
+        the process. This path draws three per patient, so a configured run holds
+        hundreds open -- each one a 16x16in canvas -- and matplotlib starts
+        warning about it partway through the first seed. Nothing here needs the
+        figure after it is on disk.
+        """
+        figure = plot_fn(*args, **kwargs)
+        if figure is not None:
+            plt.close(figure)
+
     sequences = np.concatenate([sequence.numpy() for sequence, _ in test_loader], axis=0)
     glucose_index = test_dataset.feature_columns.index("glucose")
     sequences[:, :, glucose_index] = test_dataset.inverse_transform_feature(
         sequences[:, :, glucose_index], "glucose"
     )
+    # Every figure draws what the model actually produced. The error-grid plots
+    # are individually guarded by ``render`` below, so an out-of-domain input
+    # costs that panel rather than the seed.
+
     artifacts: Dict[str, str] = {}
     dashboard = patient_dir / f"{model_name}_dashboard.png"
-    create_prediction_dashboard(
+    render(
+        create_prediction_dashboard,
         y_true=y_true,
         y_pred=y_pred,
         title=f"{model_name.upper()} model for patient {patient_id}",
@@ -338,11 +397,13 @@ def _save_plots(
     artifacts["dashboard"] = str(dashboard)
     if "clarke_ega" in config.evaluation.metrics:
         path = patient_dir / f"{model_name}_clarke_ega.png"
-        plot_clarke_analysis(y_true, y_pred, title=f"Clarke EGA - {model_name.upper()}", save_path=path)
+        render(plot_clarke_analysis, y_true, y_pred,
+               title=f"Clarke EGA - {model_name.upper()}", save_path=path)
         artifacts["clarke_plot"] = str(path)
     if "parkes_ega" in config.evaluation.metrics:
         path = patient_dir / f"{model_name}_parkes_ega.png"
-        plot_parkes_analysis(y_true, y_pred, diabetes_type=1, title=f"Parkes EGA - {model_name.upper()}", save_path=path)
+        render(plot_parkes_analysis, y_true, y_pred, diabetes_type=1,
+               title=f"Parkes EGA - {model_name.upper()}", save_path=path)
         artifacts["parkes_plot"] = str(path)
     return artifacts
 
@@ -470,7 +531,7 @@ def _run_mode(
         "prediction_horizon_minutes": config.preprocessing.prediction_horizon * config.preprocessing.sampling_rate,
         "target_units": "mg/dL",
         "plausible_glucose_range_mg_dl": list(GLUCOSE_PLAUSIBLE_RANGE_MG_DL),
-        "grid_metric_clip_range_mg_dl": list(CGM_SENSOR_RANGE_MG_DL),
+        "cgm_sensor_range_mg_dl": list(CGM_SENSOR_RANGE_MG_DL),
         "batch_size": config.training.batch_size,
         "seed": seed,
         "mode": mode,
@@ -508,10 +569,22 @@ def _run_mode(
                     epochs=config.training.pretrain_epochs,
                     **fit_args,
                 )
+                # Fine-tuning gets its own optimizer (built inside fit) and its
+                # own learning rate. Cui et al. drop it for this stage -- 3e-4
+                # pre-train, 5e-5 fine-tune -- rather than continuing at the
+                # pre-training rate: https://github.com/r-cui/GluPred (MIT).
+                finetune_args = dict(
+                    fit_args,
+                    learning_rate=(
+                        config.training.finetune_learning_rate
+                        if config.training.finetune_learning_rate is not None
+                        else config.training.learning_rate
+                    ),
+                )
                 finetune_history = model.fit(
                     train_loader=train_loader,
                     epochs=config.training.finetune_epochs,
-                    **fit_args,
+                    **finetune_args,
                 )
                 history = {
                     "epochs_completed": pretrain_history["epochs_completed"] + finetune_history["epochs_completed"],
@@ -539,18 +612,15 @@ def _run_mode(
                 y_pred=predictions,
                 metrics=config.evaluation.metrics,
                 units=test_dataset.target_units,
-                grid_clip_range=CGM_SENSOR_RANGE_MG_DL,
             )
             patient_dir = experiment_dir / f"patient_{patient_id}"
             patient_dir.mkdir(parents=True, exist_ok=True)
             artifacts: Dict[str, str] = {}
             if config.output.save_predictions:
                 path = patient_dir / f"{model_name}_predictions.csv"
-                pd.DataFrame({
-                    "true_glucose_mg_dl": true_values,
-                    "predicted_glucose_mg_dl": predictions,
-                    "absolute_error_mg_dl": np.abs(true_values - predictions),
-                }).to_csv(path, index=False)
+                _prediction_export_frame(test_dataset, true_values, predictions).to_csv(
+                    path, index=False
+                )
                 artifacts["predictions"] = str(path)
             if config.output.save_model:
                 path = patient_dir / f"{model_name}_patient_{patient_id}.pth"
@@ -579,7 +649,7 @@ def _run_mode(
                 "prediction_horizon_minutes": config.preprocessing.prediction_horizon * config.preprocessing.sampling_rate,
                 "target_units": test_dataset.target_units,
                 "plausible_glucose_range_mg_dl": list(GLUCOSE_PLAUSIBLE_RANGE_MG_DL),
-                "grid_metric_clip_range_mg_dl": list(CGM_SENSOR_RANGE_MG_DL),
+                "cgm_sensor_range_mg_dl": list(CGM_SENSOR_RANGE_MG_DL),
                 "feature_dim": train_dataset.data.shape[1],
             }
             patient_result["training_history"] = history
@@ -606,6 +676,11 @@ def _run_mode(
         }
     except Exception as exc:
         tracker.log_error(str(exc), context=f"training.mode={mode}, seed={seed}")
+        raise
+    except BaseException as exc:
+        # KeyboardInterrupt and SystemExit are not Exceptions, so without this
+        # clause a Ctrl-C leaves this seed's record at 'running' for good.
+        tracker.mark_interrupted(f"{type(exc).__name__} during mode={mode}, seed={seed}")
         raise
 
 
@@ -697,4 +772,7 @@ def run_configured_experiment(config: ExperimentConfig, patient_ids: List[int]) 
         }
     except Exception as exc:
         parent_tracker.log_error(str(exc), context="multi-seed experiment")
+        raise
+    except BaseException as exc:
+        parent_tracker.mark_interrupted(f"{type(exc).__name__} during multi-seed experiment")
         raise
