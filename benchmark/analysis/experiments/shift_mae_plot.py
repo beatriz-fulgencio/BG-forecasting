@@ -1,22 +1,7 @@
 """
 Figures for per-patient distributional shift vs prediction error.
-
-Two renderings of the same table, one point per patient per horizon, plotting
-``shift_score`` (Wasserstein train->test glucose shift, x) against ``MAE`` (y):
-
-- :func:`plot_shift_vs_mae` -- a single panel, colored by horizon, for comparing
-  horizons against each other.
-- :func:`plot_shift_vs_mae_faceted` -- one panel per horizon, for reading a
-  single horizon's relationship without the others overlapping it.
-
-Both take the long patient x horizon table built by the Phase-1 analysis
-(``RUN/run_phase1_shift_analysis.py``), which owns the statistics; this module
-only draws. Correlations are annotated per horizon and never pooled across
-horizons, because each patient contributes a row to every horizon and pooling
-them would count one patient as several independent observations.
 """
 
-import re
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
@@ -36,16 +21,6 @@ HORIZON_COLORS: Dict[int, str] = {
 _REQUIRED_COLUMNS = ("horizon", "shift_score", "mae")
 
 
-def parse_horizon(name: str) -> Optional[int]:
-    """Extract the prediction horizon in minutes from an experiment dir name.
-
-    e.g. ``experiment_20251104_034100_30min_tl`` -> ``30``. Returns None if no
-    ``<n>min`` token is present.
-    """
-    match = re.search(r"(\d+)\s*min", name)
-    return int(match.group(1)) if match else None
-
-
 def _plottable(df: pd.DataFrame, horizons: Optional[Sequence[int]] = None) -> pd.DataFrame:
     """Drop rows that cannot be plotted, and optionally restrict to horizons.
 
@@ -56,9 +31,20 @@ def _plottable(df: pd.DataFrame, horizons: Optional[Sequence[int]] = None) -> pd
     missing = [column for column in _REQUIRED_COLUMNS if column not in df.columns]
     if missing:
         raise ValueError(f"shift/MAE table is missing column(s): {', '.join(missing)}")
+    # Plotting and SciPy correlations both require finite numeric input.  Coerce
+    # rather than relying on Matplotlib's later, less actionable failures.
+    df = df.copy()
+    for column in _REQUIRED_COLUMNS:
+        df[column] = pd.to_numeric(df[column], errors="coerce")
     if horizons is not None:
         df = df[df["horizon"].isin(list(horizons))]
-    return df.dropna(subset=["shift_score", "mae"])
+    finite = np.isfinite(df[list(_REQUIRED_COLUMNS)].to_numpy(dtype=float)).all(axis=1)
+    return df.loc[finite].copy()
+
+
+def _correlation_is_defined(g: pd.DataFrame) -> bool:
+    """Pearson/Spearman need enough rows and variation in both variables."""
+    return len(g) >= 3 and g["shift_score"].nunique() >= 2 and g["mae"].nunique() >= 2
 
 
 def _trend_line(ax, g: pd.DataFrame, color, linewidth: float) -> None:
@@ -102,12 +88,13 @@ def plot_shift_vs_mae(df: pd.DataFrame,
         g = df[df["horizon"] == horizon]
         color = HORIZON_COLORS.get(horizon, None)
 
-        # Per-horizon Spearman correlation (needs >= 3 points to be meaningful).
-        if len(g) >= 3:
+        # Per-horizon Spearman correlation needs enough patients and variation
+        # in both variables; SciPy otherwise emits a warning and returns NaN.
+        if _correlation_is_defined(g):
             rho, p = spearmanr(g["shift_score"], g["mae"])
-            label = f"{horizon} min (ρ={rho:.2f}, p={p:.3f}, n={len(g)})"
+            label = f"{horizon} min (ρ={rho:.2f}, unadj. p={p:.3f}, n={len(g)})"
         else:
-            label = f"{horizon} min (n={len(g)})"
+            label = f"{horizon} min (correlation undefined, n={len(g)})"
 
         ax.scatter(g["shift_score"], g["mae"], color=color, s=55,
                    alpha=0.85, edgecolor="white", linewidth=0.5, label=label, zorder=3)
@@ -161,12 +148,14 @@ def plot_shift_vs_mae_faceted(df: pd.DataFrame,
         ax.scatter(g["shift_score"], g["mae"], color=color, s=60, alpha=0.85,
                    edgecolor="white", linewidth=0.5, zorder=3)
         _trend_line(ax, g, color, linewidth=2)
-        if len(g) >= 3:
+        if _correlation_is_defined(g):
             pr, pp = pearsonr(g["shift_score"], g["mae"])
             sr, _ = spearmanr(g["shift_score"], g["mae"])
-            ax.set_title(f"{horizon} min   Pearson r={pr:.2f} (p={pp:.2f}),  Spearman ρ={sr:.2f}")
+            ax.set_title(
+                f"{horizon} min   Pearson r={pr:.2f} (unadj. p={pp:.2f}),  Spearman ρ={sr:.2f}"
+            )
         else:
-            ax.set_title(f"{horizon} min   (n={len(g)})")
+            ax.set_title(f"{horizon} min   correlation undefined (n={len(g)})")
         ax.set_xlabel("Distributional shift (Wasserstein train→test, mg/dL)")
         ax.set_ylabel(f"{model_name} MAE (mg/dL)")
         ax.grid(True, alpha=0.25, zorder=0)

@@ -6,23 +6,81 @@ This module provides tools for:
 - t-SNE visualization of patient characteristics
 - Correlation analysis between patient features and model performance
 - Statistical analysis of patient subgroups
-
-UPDATED: This module now uses pre-computed metrics from comprehensive_metrics_*.json files
-instead of calculating metrics from raw predictions. It focuses only on visualization and
-analysis of existing results.
 """
 
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
 from pathlib import Path
 from scipy import stats
 from sklearn.manifold import TSNE
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
-from typing import Dict, List, Tuple, Optional
+from typing import List, Optional, Tuple
 import json
+
+from ..dataset.patient_features import compute_patient_features
+from ..results_io import ExperimentResults, load_experiment_results
+
+
+def deterministic_glucose_windows(values: np.ndarray, *, window_size: int = 12,
+                                  max_windows: int = 1000) :
+    """Return evenly subsampled, chronological glucose windows with no RNG.
+    """
+    series = np.asarray(values, dtype=float)
+    if window_size < 2 or max_windows < 1:
+        raise ValueError("window_size must be >= 2 and max_windows must be positive")
+    if series.ndim != 1 or len(series) < window_size or not np.all(np.isfinite(series)):
+        return np.empty((0, window_size), dtype=float)
+    windows = np.lib.stride_tricks.sliding_window_view(series, window_size)
+    if len(windows) <= max_windows:
+        return windows.copy()
+    indices = np.linspace(0, len(windows) - 1, num=max_windows, dtype=int)
+    return windows[indices].copy()
+
+
+def leave_one_patient_out_explanatory_models(
+    frame: pd.DataFrame, feature_columns: List[str], *, outcome: str = "mae", random_seed: int = 42
+) :
+    """Return one held-out outcome prediction per patient and model.
+
+    This is exploratory at the small cohort size. Feature rankings and errors
+    are reported, but neither coefficient nor importance is a confirmatory
+    finding.  Models are intentionally fitted inside each Leave-One-Out split.
+    """
+    from sklearn.ensemble import RandomForestRegressor
+    from sklearn.linear_model import Ridge
+    from sklearn.model_selection import LeaveOneOut
+    from sklearn.pipeline import make_pipeline
+    from sklearn.preprocessing import StandardScaler
+
+    needed = ["patient_id", outcome, *feature_columns]
+    if any(column not in frame for column in needed):
+        return pd.DataFrame(columns=["patient_id", "model", "observed", "predicted", "absolute_error"])
+    data = frame.loc[:, needed].dropna()
+    if len(data) < 3:
+        return pd.DataFrame(columns=["patient_id", "model", "observed", "predicted", "absolute_error"])
+    X = data[feature_columns].to_numpy(dtype=float)
+    y = data[outcome].to_numpy(dtype=float)
+    rows = []
+    models = {
+        "ridge": make_pipeline(StandardScaler(), Ridge(alpha=1.0)),
+        "random_forest": RandomForestRegressor(
+            n_estimators=500, min_samples_leaf=2, random_state=random_seed, n_jobs=1
+        ),
+    }
+    for name, estimator in models.items():
+        for train, test in LeaveOneOut().split(X):
+            estimator.fit(X[train], y[train])
+            predicted = float(estimator.predict(X[test])[0])
+            observed = float(y[test][0])
+            rows.append({
+                "patient_id": int(data.iloc[test[0]]["patient_id"]), "model": name,
+                "observed": observed, "predicted": predicted,
+                "absolute_error": abs(predicted - observed),
+                "evidence_level": "exploratory_held_out_patient",
+            })
+    return pd.DataFrame(rows)
 
 
 class PatientAnalyzer:
@@ -30,189 +88,85 @@ class PatientAnalyzer:
     Analyze patient-level performance differences within a single experiment.
     """
     
-    def __init__(self, experiment_dir: str, experiment_name: str = None):
+    # Metric entries that are not scalar columns
+    NON_SCALAR_METRIC_KEYS = frozenset({
+        "y_true", "predictions", "n_predictions", "dispersion", "seeds",
+    })
+
+    # Only these held-out glucose-signal characteristics may be used as
+    # explanatory features.
+    GLUCOSE_FEATURE_COLUMNS = (
+        "mean_glucose", "std_glucose", "iqr_glucose", "mean_change",
+        "std_change", "hypo_percent", "in_range_percent", "hyper_percent",
+        "severe_hypo_percent", "severe_hyper_percent", "stability_score",
+    )
+
+    def __init__(self,
+                 experiment_dir: str,
+                 experiment_name: str = None,
+                 mode: Optional[str] = None,
+                 seed: Optional[int] = None):
         """
         Initialize the patient analyzer.
-        
+
         Args:
-            experiment_dir: Path to experiment directory
-            experiment_name: Optional name for the experiment
+            experiment_dir: Path to an experiment directory
+            experiment_name: Optional label.
+            mode: Training mode to analyse (regular/transfer).
+            seed: Analyse this seed alone instead of the cross-seed mean.
         """
-        print(experiment_dir)
         self.experiment_dir = Path(experiment_dir)
-        self.experiment_name = experiment_name or self.experiment_dir.name
-        
+        self.mode = mode
+        self.seed = seed
+
+        self.results: Optional[ExperimentResults] = None
+        self.experiment_name = experiment_name
         self.patient_results = {}
         self.patient_features = {}
         self.performance_data = None
-        
+
+    @property
+    def horizon_minutes(self):
+        """Prediction horizon of the loaded run, once it has been loaded."""
+        return self.results.horizon_minutes if self.results else None
+
+    @property
+    def models(self):
+        """Model names present in the loaded run."""
+        return self.results.models if self.results else ()
+
     def load_experiment_results(self):
-        """Load results from the comprehensive metrics JSON file."""
-        print(f"Loading patient results from {self.experiment_name}...")
-        
-        # Find comprehensive metrics JSON files
-        json_files = list(self.experiment_dir.glob("comprehensive_metrics_*.json"))
-        
-        if not json_files:
-            print(f"    No comprehensive_metrics_*.json files found in {self.experiment_dir}")
-            return self.patient_results
-        
-        # Use the most recent JSON file if multiple exist
-        json_file = sorted(json_files)[-1]
-        
-        try:
-            with open(json_file, 'r') as f:
-                data = json.load(f)
-            
-            # Load from comprehensive_metrics format
-            patient_metrics = data.get('patient_metrics', {})
-            
-            for patient_id_str, patient_data in patient_metrics.items():
-                try:
-                    patient_id = int(patient_id_str)
-                except:
-                    continue
-                
-                if patient_id not in self.patient_results:
-                    self.patient_results[patient_id] = {}
-                
-                for model_name, model_data in patient_data.items():
-                    # Extract all metrics directly from comprehensive JSON
-                    mae = model_data.get('mae')
-                    rmse = model_data.get('rmse')
-                    mape = model_data.get('mape')
-                    mard = model_data.get('mard')
-                    
-                    # Extract TIR metrics
-                    tir_data = model_data.get('tir', {})
-                    tir = tir_data.get('time_in_range', 0) if isinstance(tir_data, dict) else 0
-                    hypo_events = tir_data.get('time_below_range', 0) if isinstance(tir_data, dict) else 0
-                    hyper_events = tir_data.get('time_above_range', 0) if isinstance(tir_data, dict) else 0
-                    
-                    # Extract Clarke and Parkes zones
-                    clarke_zones = model_data.get('clarke_zones', {})
-                    clarke_a_b = model_data.get('clarke_a_b', 0)
-                    parkes_zones = model_data.get('parkes_zones', {})
-                    parkes_a_b = model_data.get('parkes_a_b', 0)
-                    
-                    # Load glucose data (y_true) from predictions CSV for patient feature computation
-                    y_true = None
-                    n_predictions = 0
-                    patient_dir = self.experiment_dir / f"patient_{patient_id}"
-                    if patient_dir.exists():
-                        pred_files = list(patient_dir.glob(f"{model_name}_patient_{patient_id}_predictions.csv"))
-                        if pred_files:
-                            pred_file = pred_files[0]
-                            try:
-                                df = pd.read_csv(pred_file)
-                                if 'true_values' in df.columns:
-                                    y_true = df['true_values'].values
-                                elif 'actual' in df.columns:
-                                    y_true = df['actual'].values
-                                else:
-                                    # Try to infer column names - use first column as true values
-                                    cols = df.columns.tolist()
-                                    if len(cols) >= 1:
-                                        y_true = df.iloc[:, 0].values
-                                
-                                if y_true is not None:
-                                    n_predictions = len(y_true)
-                                    
-                            except Exception as e:
-                                print(f"    Warning: Could not load glucose data from {pred_file}: {e}")
-                    
-                    self.patient_results[patient_id][model_name] = {
-                        'mae': mae,
-                        'rmse': rmse,
-                        'mape': mape,
-                        'mard': mard,
-                        'tir': tir,
-                        'hypo_events': hypo_events,
-                        'hyper_events': hyper_events,
-                        'clarke_a_b': clarke_a_b,
-                        'parkes_a_b': parkes_a_b,
-                        'clarke_zones': clarke_zones,
-                        'parkes_zones': parkes_zones,
-                        'y_true': y_true,  # Only for patient feature computation
-                        'n_predictions': n_predictions
-                    }
-            
-            print(f"[OK] Loaded {len(self.patient_results)} patients from {json_file.name}")
-            
-        except Exception as e:
-            print(f"    Error loading JSON file {json_file}: {e}")
-        
+        """Load patient metrics through the shared results reader."""
+        self.results = load_experiment_results(
+            self.experiment_dir, mode=self.mode, seed=self.seed
+        )
+        self.mode = self.results.mode
+        if self.experiment_name is None:
+            self.experiment_name = self.results.label
+
+        # Analyses below mutate their rows (adding derived columns), so hand out copies rather than aliases into the loaded results.
+        self.patient_results = {
+            patient_id: {model: dict(metrics) for model, metrics in per_model.items()}
+            for patient_id, per_model in self.results.patient_metrics.items()
+        }
+
+        seed_note = (
+            f"seed {self.results.seeds[0]}"
+            if self.results.aggregation == "single_seed" and self.results.seeds
+            else f"mean of {len(self.results.seeds)} seed(s)"
+            if self.results.aggregation == "seed_mean"
+            else "single run"
+        )
+        print(
+            f"[OK] Loaded {len(self.patient_results)} patients from {self.experiment_name} "
+            f"({', '.join(self.results.models)}; {seed_note})"
+        )
         return self.patient_results
-    
+
     def compute_patient_features(self):
-        """
-        Compute comprehensive features for each patient based on their glucose data.
-        Only extracts patient characteristics, not performance metrics.
-        """
-        print("Computing patient features...")
-        
-        for patient_id in self.patient_results.keys():
-            # Get glucose data from first model available (should be the same for all models)
-            first_model = list(self.patient_results[patient_id].keys())[0]
-            y_true = self.patient_results[patient_id][first_model]['y_true']
-            
-            if y_true is None or len(y_true) == 0:
-                print(f"    Warning: No glucose data available for patient {patient_id}")
-                continue
-            
-            # Basic statistical features
-            mean_glucose = np.mean(y_true)
-            std_glucose = np.std(y_true)
-            
-            # Compute glucose dynamics features
-            glucose_diff = np.diff(y_true)
-            mean_change = np.mean(glucose_diff)
-            std_change = np.std(glucose_diff)
-            
-            # Range and quartiles
-            glucose_range = np.max(y_true) - np.min(y_true)
-            iqr = np.percentile(y_true, 75) - np.percentile(y_true, 25)
-                        
-            # Time-based features
-            n_samples = len(y_true)
-            
-            # Clinical ranges
-            hypo_percent = np.sum(y_true < 70) / len(y_true) * 100
-            hyper_percent = np.sum(y_true > 180) / len(y_true) * 100
-            in_range_percent = np.sum((y_true >= 70) & (y_true <= 180)) / len(y_true) * 100
-            severe_hypo_percent = np.sum(y_true < 54) / len(y_true) * 100
-            severe_hyper_percent = np.sum(y_true > 250) / len(y_true) * 100
-            
-            # Glucose stability metrics
-            n_rapid_changes = np.sum(np.abs(glucose_diff) > 20)  # Changes > 20 mg/dL
-            stability_score = 100 - (n_rapid_changes / len(glucose_diff) * 100)
-            
-            features = {
-                'mean_glucose': mean_glucose,
-                'std_glucose': std_glucose,
-                'min_glucose': np.min(y_true),
-                'max_glucose': np.max(y_true),
-                'median_glucose': np.median(y_true),
-                'q25_glucose': np.percentile(y_true, 25),
-                'q75_glucose': np.percentile(y_true, 75),
-                'glucose_range': glucose_range,
-                'iqr_glucose': iqr,
-                'mean_change': mean_change,
-                'std_change': std_change,
-                'n_samples': n_samples,
-                'hypo_percent': hypo_percent,
-                'hyper_percent': hyper_percent,
-                'in_range_percent': in_range_percent,
-                'severe_hypo_percent': severe_hypo_percent,
-                'severe_hyper_percent': severe_hyper_percent,
-                'n_rapid_changes': n_rapid_changes,
-                'stability_score': stability_score
-            }
-            
-            self.patient_features[patient_id] = features
-        
-        print(f"[OK] Computed features for {len(self.patient_features)} patients")
-    
+        """Describe each patient's held-out glucose series."""
+        self.patient_features = compute_patient_features(self.results)
+
     def create_performance_dataframe(self, model_name: str = None):
         """
         Create a comprehensive DataFrame with patient features and performance metrics.
@@ -244,10 +198,11 @@ class PatientAnalyzer:
             # Add performance metrics from pre-computed results
             performance_metrics = self.patient_results[patient_id][target_model]
             for key, value in performance_metrics.items():
-                if key in ['y_true']:  # Skip glucose data arrays
+                # Raw series, per-seed spread and seed lists are carried on the metrics for other callers
+                if key in self.NON_SCALAR_METRIC_KEYS:
                     continue
-                elif isinstance(value, dict):
-                    # Flatten nested dictionaries (clarke_zones, parkes_zones)
+                if isinstance(value, dict):
+                    # Flatten nested dictionaries (tir, clarke_zones, parkes_zones)
                     for sub_key, sub_value in value.items():
                         row[f"{key}_{sub_key}"] = sub_value
                 else:
@@ -256,7 +211,7 @@ class PatientAnalyzer:
             data.append(row)
         
         self.performance_data = pd.DataFrame(data)
-        print(f"[OK] Created performance DataFrame with {len(self.performance_data)} patients and {len(self.performance_data.columns)} features")
+        print(f"[DONE] Created performance DataFrame with {len(self.performance_data)} patients and {len(self.performance_data.columns)} features")
         
         return self.performance_data
     
@@ -282,11 +237,13 @@ class PatientAnalyzer:
         if self.performance_data is None:
             self.create_performance_dataframe(model_name)
         
-        # Use only performance metrics for t-SNE analysis
-        feature_cols = ['mae', 'rmse', 'mape', 'mard']
+        # Embedding and clustering are based only on lucose signal characteristics
+        feature_cols = [
+            column for column in self.GLUCOSE_FEATURE_COLUMNS if column in self.performance_data
+        ]
         
         # Prepare data
-        X = self.performance_data[feature_cols].values
+        X = self.performance_data[feature_cols].replace([np.inf, -np.inf], np.nan).fillna(0.0).values
         patient_ids = self.performance_data['patient_id'].values
         
         # Remove features with zero or very low variance
@@ -303,7 +260,7 @@ class PatientAnalyzer:
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X_filtered)
         
-        print(f"Running dimensionality reduction on {len(patient_ids)} patients with {len(feature_cols)} performance metrics...")
+        print(f"Running dimensionality reduction on {len(patient_ids)} patients with {len(feature_cols)} glucose-derived features...")
         print(f"Using metrics: {', '.join(feature_cols)}")
         
         # Set appropriate perplexity for small datasets
@@ -365,7 +322,7 @@ class PatientAnalyzer:
         
         # Create visualization
         fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-        fig.suptitle(f'Patient Performance Analysis: {self.experiment_name}\nModel: {model_name or "Default"} - {method_name} on Performance Metrics {explained_variance}', 
+        fig.suptitle(f'Patient Glucose-Feature Analysis (exploratory): {self.experiment_name}\nModel: {model_name or "Default"} - {method_name} {explained_variance}',
                      fontsize=16, fontweight='bold')
         
         # Plot 1: Colored by MAE performance
@@ -374,7 +331,7 @@ class PatientAnalyzer:
         scatter1 = axes[0, 0].scatter(X_reduced[:, 0], X_reduced[:, 1], 
                                      c=metric_values, cmap='viridis_r', 
                                      s=100, alpha=0.7, edgecolors='black', linewidth=1)
-        axes[0, 0].set_title('Patients in Performance Space\n(Colored by MAE)', 
+        axes[0, 0].set_title('Patients in Glucose-Feature Space\n(Colored by MAE)',
                             fontsize=14, fontweight='bold')
         axes[0, 0].set_xlabel(f'{method_name} Component 1')
         axes[0, 0].set_ylabel(f'{method_name} Component 2')
@@ -508,12 +465,13 @@ class PatientAnalyzer:
             axes[1, 0].set_xticks([])
             axes[1, 0].set_yticks([])
         
-        # Plot 4: Patient feature correlations with MAE (using all patient features)
-        # Get all patient feature columns for correlation analysis
-        all_feature_cols = [col for col in self.performance_data.columns 
-                           if col not in ['patient_id', 'mae', 'rmse', 'mape', 'mard', 'tir', 
-                                         'hypo_events', 'hyper_events', 'clarke_a_b', 'parkes_a_b', 
-                                         'n_predictions', 'performance_group'] and not col.startswith('clarke_zones_') and not col.startswith('parkes_zones_')]
+        # Plot 4: Correlate held-out glucose characteristics with MAE. Do not
+        # include model-output metrics such as TIR or error-grid zones: those
+        # are alternative measures of forecasting performance, not patient
+        # predictors.
+        all_feature_cols = [
+            column for column in self.GLUCOSE_FEATURE_COLUMNS if column in self.performance_data
+        ]
         
         # Filter out low-variance features for better analysis
         X_feature_analysis = self.performance_data[all_feature_cols].values
@@ -566,7 +524,7 @@ class PatientAnalyzer:
         
         return feature_correlations
     
-    def plot_glucose_tsne(self, 
+    def _plot_glucose_tsne_legacy(self,
                          model_name: str = None,
                          save_path: str = None,
                          max_samples: int = 1000,
@@ -587,6 +545,7 @@ class PatientAnalyzer:
         
         if not self.patient_results:
             self.load_experiment_results()
+        rng = np.random.default_rng(42)
         
         # Prepare glucose data for each patient
         glucose_data = []
@@ -611,7 +570,7 @@ class PatientAnalyzer:
             
             # Sample glucose values if too many
             if len(y_true) > max_samples:
-                indices = np.random.choice(len(y_true), max_samples, replace=False)
+                indices = rng.choice(len(y_true), max_samples, replace=False)
                 sampled_glucose = y_true[indices]
             else:
                 sampled_glucose = y_true
@@ -643,21 +602,14 @@ class PatientAnalyzer:
         if use_pca:
             print("Using PCA instead of t-SNE for small dataset")
             from sklearn.decomposition import PCA
-            # For 1D data, we'll add some noise to create a 2D embedding
-            glucose_with_noise = np.column_stack([glucose_scaled.flatten(), 
-                                                 np.random.normal(0, 0.1, len(glucose_scaled))])
             pca = PCA(n_components=2, random_state=42)
-            glucose_reduced = pca.fit_transform(glucose_with_noise)
+            glucose_reduced = pca.fit_transform(glucose_scaled)
             method_name = "PCA"
             explained_variance = f"(Explained variance: {pca.explained_variance_ratio_[0]:.2f}, {pca.explained_variance_ratio_[1]:.2f})"
         else:
             # Use t-SNE with appropriate perplexity
             optimal_perplexity = min(max(5, len(glucose_data) // 100), 50)
             print(f"Using t-SNE with perplexity: {optimal_perplexity}")
-            
-            # For 1D glucose data, add time-based feature for better embedding
-            time_feature = np.arange(len(glucose_data)) / len(glucose_data)
-            glucose_with_time = np.column_stack([glucose_scaled.flatten(), time_feature]) # Add time as a feature
             
             tsne = TSNE(
                 n_components=2,
@@ -668,7 +620,7 @@ class PatientAnalyzer:
                 init='pca',
                 metric='euclidean'
             )
-            glucose_reduced = tsne.fit_transform(glucose_with_time)
+            glucose_reduced = tsne.fit_transform(glucose_scaled)
             method_name = "t-SNE"
             explained_variance = ""
         
@@ -756,6 +708,161 @@ class PatientAnalyzer:
         return patient_stats
     
     
+    def plot_glucose_tsne(self,
+                          model_name: str = None,
+                          save_path: str = None,
+                          max_samples: int = 1000,
+                          use_pca_fallback: bool = True,
+                          random_state: int = 42):
+        """Embed test-period glucose values per patient, coloured by MAE. """
+        print(f"\n{'='*60}")
+        print("GLUCOSE VALUES t-SNE ANALYSIS")
+        print(f"{'='*60}")
+
+        if not self.patient_results:
+            self.load_experiment_results()
+
+        rng = np.random.default_rng(random_state)
+
+        glucose_values, patient_labels, mae_values = [], [], []
+        # The figure is titled with the model whose MAE colours it.
+        model_label = model_name or ""
+        for patient_id in sorted(self.patient_results.keys()):
+            models = self.patient_results[patient_id]
+            if model_name is None:
+                target_model = next(iter(models))
+            elif model_name in models:
+                target_model = model_name
+            else:
+                continue
+            model_label = model_label or target_model
+
+            y_true = models[target_model].get("y_true")
+            mae = models[target_model].get("mae")
+            if y_true is None or not len(y_true) or mae is None:
+                print(f"    Warning: no glucose data available for patient {patient_id}")
+                continue
+
+            y_true = np.asarray(y_true, dtype=float)
+            if len(y_true) > max_samples:
+                # Sorted so the retained readings stay in chronological order:
+                # the embedding's second coordinate is positional, and shuffling
+                # here would scramble it into noise.
+                indices = np.sort(rng.choice(len(y_true), max_samples, replace=False))
+                sampled = y_true[indices]
+            else:
+                sampled = y_true
+
+            glucose_values.append(sampled)
+            patient_labels.extend([patient_id] * len(sampled))
+            mae_values.extend([float(mae)] * len(sampled))
+
+        if not glucose_values:
+            print("    Error: no glucose data available for analysis")
+            return None
+
+        glucose_array = np.concatenate(glucose_values).reshape(-1, 1)
+        patient_array = np.asarray(patient_labels)
+        mae_array = np.asarray(mae_values, dtype=float)
+        n_patients = len(np.unique(patient_array))
+        print(f"Analyzing {len(glucose_array)} glucose values from {n_patients} patients...")
+
+        glucose_scaled = StandardScaler().fit_transform(glucose_array).flatten()
+
+        if use_pca_fallback and n_patients < 8:
+            # A cohort this small gives t-SNE too few neighbours to be meaningful.
+            print("Using PCA instead of t-SNE for small dataset")
+            from sklearn.decomposition import PCA
+            features = np.column_stack([
+                glucose_scaled, rng.normal(0, 0.1, len(glucose_scaled)),
+            ])
+            reducer = PCA(n_components=2, random_state=random_state)
+            embedding = reducer.fit_transform(features)
+            method = "PCA"
+            variance = ("(explained variance: "
+                        f"{reducer.explained_variance_ratio_[0]:.2f}, "
+                        f"{reducer.explained_variance_ratio_[1]:.2f})")
+        else:
+            perplexity = min(max(5, len(glucose_scaled) // 100), 50)
+            print(f"Using t-SNE with perplexity: {perplexity}")
+            position = np.arange(len(glucose_scaled)) / len(glucose_scaled)
+            features = np.column_stack([glucose_scaled, position])
+            embedding = TSNE(
+                n_components=2, random_state=random_state, perplexity=perplexity,
+                max_iter=1000, learning_rate="auto", init="pca", metric="euclidean",
+            ).fit_transform(features)
+            method = "t-SNE"
+            variance = ""
+
+        figure, axes = plt.subplots(1, 2, figsize=(16, 6))
+        horizon = f", {self.horizon_minutes}-min" if self.horizon_minutes else ""
+        figure.suptitle(
+            f"Test-period glucose values ({model_label}{horizon}): {method} embedding "
+            f"(exploratory) {variance}\n{self.experiment_name}".rstrip(),
+            fontsize=13, fontweight="bold",
+        )
+
+        # Left: coloured by patient. Legend carries each patient's MAE so the two
+        # panels can be read against each other without matching colours by eye.
+        palette = plt.cm.tab20(np.linspace(0, 1, max(n_patients, 1)))
+        for index, patient_id in enumerate(sorted(np.unique(patient_array))):
+            mask = patient_array == patient_id
+            axes[0].scatter(embedding[mask, 0], embedding[mask, 1],
+                            color=[palette[index]], s=20, alpha=.6, edgecolors="none",
+                            label=f"P{patient_id} (MAE {mae_array[mask][0]:.1f})")
+        axes[0].set_title("Glucose values coloured by patient", fontsize=12, fontweight="bold")
+        if n_patients <= 15:
+            axes[0].legend(bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=7,
+                           framealpha=.9, title="Patient (MAE, mg/dL)")
+        else:
+            axes[0].legend(bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=6,
+                           ncol=2, framealpha=.9, title="Patient (MAE, mg/dL)")
+
+        # Right: the same points coloured by that patient's MAE. MAE is applied
+        # after the embedding is fitted; it is never a coordinate.
+        colored = axes[1].scatter(embedding[:, 0], embedding[:, 1], c=mae_array,
+                                  cmap="viridis_r", s=20, alpha=.6, edgecolors="none")
+        axes[1].set_title("Glucose values coloured by patient MAE (not an input)",
+                          fontsize=12, fontweight="bold")
+        figure.colorbar(colored, ax=axes[1], label="MAE (mg/dL)")
+
+        for axis in axes:
+            axis.set_xlabel(f"{method} component 1")
+            axis.set_ylabel(f"{method} component 2")
+        figure.tight_layout()
+        if save_path:
+            figure.savefig(save_path, dpi=300, bbox_inches="tight")
+            plt.close(figure)
+            print(f"[OK] Glucose t-SNE plot saved to {save_path}")
+        else:
+            plt.close(figure)
+
+        # Per-patient glucose distribution of the embedded readings, alongside the
+        # MAE that colours them: enough to check from the returned summary whether
+        # a cluster is a level effect or a variability one, without reopening the
+        # figure.
+        print("\nPatient glucose distribution:")
+        print("-" * 50)
+        summary = {}
+        for patient_id in np.unique(patient_array):
+            mask = patient_array == patient_id
+            readings = glucose_array[mask].flatten()
+            summary[int(patient_id)] = {
+                "n_samples": int(readings.size),
+                "mae": float(mae_array[mask][0]),
+                "mean_glucose": float(np.mean(readings)),
+                "std_glucose": float(np.std(readings)),
+                "min_glucose": float(np.min(readings)),
+                "max_glucose": float(np.max(readings)),
+            }
+            entry = summary[int(patient_id)]
+            print(f"Patient {patient_id}: mean={entry['mean_glucose']:.1f}, "
+                  f"std={entry['std_glucose']:.1f}, "
+                  f"range=[{entry['min_glucose']:.0f}-{entry['max_glucose']:.0f}], "
+                  f"MAE={entry['mae']:.3f}, n={entry['n_samples']}")
+        print("[OK] Glucose t-SNE analysis complete")
+        return summary
+
     def plot_cluster_tsne_correlation(self,
                                       model_name: str = None,
                                       output_dir: str = 'patient_analysis_results',
@@ -771,24 +878,6 @@ class PatientAnalyzer:
         3. Performance pr ofiles for each cluster
         4. Patient ID mappings with cross-references
         
-        Parameters:
-        -----------
-        model_name : str, optional
-            Model name to analyze (RNN, LSTM, GRU)
-        output_dir : str
-            Output directory for plots (default: 'patient_analysis_results')
-        save_path : str, optional
-            Path to save plot (default: auto-generated)
-        method : str
-            Dimensionality reduction method ('t-SNE', 'PCA', 'UMAP')
-        cluster_method : str
-            Clustering method ('kmeans', 'performance')
-        n_clusters : int, optional
-            Number of clusters (auto-determined if None)
-        
-        Returns:
-        --------
-        dict : Detailed cluster information with patient assignments
         """
         from scipy.spatial import ConvexHull
         from matplotlib.patches import Polygon
@@ -797,23 +886,18 @@ class PatientAnalyzer:
         print(f"Creating Cluster-t-SNE Correlation Analysis")
         print(f"{'='*60}")
         
-        # Load data
-        if self.performance_data is None or self.features_data is None:
-            if model_name:
-                # Data will be loaded from existing analyzer state
-                if self.performance_data is None:
-                    print(f"[ERROR] No data loaded. Please load experiment results first.")
-                    return None
-            else:
-                # Try to find available model from existing data
-                if self.performance_data is None:
-                    print(f"[ERROR] No experiment results loaded")
-                    return None
-                model_name = 'GRU'  # Default
-        
+        # This draws whatever create_performance_dataframe already built; it does
+        # not load anything itself.
         if self.performance_data is None:
-            print("[ERROR] Failed to load data")
+            print("[ERROR] No performance data. Call load_experiment_results() and "
+                  "create_performance_dataframe() first.")
             return None
+
+        if model_name is None:
+            if not self.models:
+                print("[ERROR] No model in the loaded run; pass model_name explicitly.")
+                return None
+            model_name = self.models[0]
         
         # Use MAE as primary metric
         metric = 'mae'
@@ -825,9 +909,13 @@ class PatientAnalyzer:
             print(f"[WARNING] Need at least 3 patients, found {len(patient_ids)}")
             return None
         
-        # Get features and scale
-        feature_cols = [col for col in self.performance_data.columns 
-                       if col not in ['patient_id', 'mae', 'rmse', 'mape']]
+        # Cluster only glucose-derived characteristics.  Outcomes remain a
+        # descriptive colour/summary after data-derived groups are formed.
+        feature_cols = [column for column in (
+            'mean_glucose', 'std_glucose', 'iqr_glucose', 'mean_change',
+            'std_change', 'hypo_percent', 'in_range_percent', 'hyper_percent',
+            'severe_hypo_percent', 'severe_hyper_percent', 'stability_score',
+        ) if column in self.performance_data]
         X = self.performance_data.loc[valid_mask, feature_cols].values
         X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
         
@@ -864,20 +952,16 @@ class PatientAnalyzer:
         if n_clusters is None:
             n_clusters = min(4, max(2, len(patient_ids) // 3))
         
-        if cluster_method == 'kmeans':
-            from sklearn.cluster import KMeans
-            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-            clusters = kmeans.fit_predict(X_scaled)
-        else:  # performance-based clustering
-            # Create tertile-based clusters
-            performance_percentiles = [np.percentile(metric_values, p) for p in [33, 67]]
-            clusters = np.digitize(metric_values, performance_percentiles)
-            n_clusters = len(np.unique(clusters))
+        if cluster_method != 'kmeans':
+            raise ValueError("Only glucose-feature KMeans clustering is supported; performance-based groups are circular")
+        from sklearn.cluster import KMeans
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+        clusters = kmeans.fit_predict(X_scaled)
         
         # Create figure with 2x2 subplots
         fig, axes = plt.subplots(2, 2, figsize=(16, 14))
-        fig.suptitle(f'Cluster-{method_name} Correlation Analysis: {model_name}\n'
-                     f'{n_clusters} Clusters ({cluster_method})', 
+        fig.suptitle(f'Exploratory glucose-feature clusters: {model_name}\n'
+                     f'{n_clusters} data-derived clusters ({method_name})',
                      fontsize=16, fontweight='bold')
         
         # Define colors
@@ -997,15 +1081,15 @@ class PatientAnalyzer:
             # Classify performance
             if ci['mean_mae'] < np.percentile(metric_values, 33):
                 perf_label = "HIGH PERFORMANCE"
-                perf_emoji = "🟢"
             elif ci['mean_mae'] < np.percentile(metric_values, 67):
                 perf_label = "MEDIUM PERFORMANCE"
-                perf_emoji = "🟡"
             else:
                 perf_label = "LOW PERFORMANCE"
-                perf_emoji = "🔴"
-            
-            mapping_text += f"{perf_emoji} Cluster {ci['cluster']} - {perf_label}\n"
+
+            # No emoji here: this string is rendered into the figure by matplotlib,
+            # whose default mono font has no glyph for them, so they came out as
+            # blank boxes and warned on every call. The label carries the meaning.
+            mapping_text += f"Cluster {ci['cluster']} - {perf_label}\n"
             mapping_text += f"{'─' * 53}\n"
             mapping_text += f"Size: {ci['n_patients']} patients\n"
             mapping_text += f"Patient IDs: {ci['patients']}\n"
@@ -1036,9 +1120,14 @@ class PatientAnalyzer:
         
         # Save plot
         if save_path is None:
-            os.makedirs(output_dir, exist_ok=True)
-            save_path = os.path.join(output_dir, 
-                                    f'cluster_tsne_correlation_{model_name}_{method.lower()}.png')
+            # Was os.makedirs/os.path.join, but this module never imported os, so
+            # the default-path branch raised NameError on every call. Uses the
+            # pathlib import the rest of the module already relies on.
+            directory = Path(output_dir)
+            directory.mkdir(parents=True, exist_ok=True)
+            save_path = str(
+                directory / f'cluster_tsne_correlation_{model_name}_{method.lower()}.png'
+            )
         
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"\n[OK] Cluster-t-SNE correlation plot saved to {save_path}")
@@ -1078,7 +1167,7 @@ class PatientAnalyzer:
             'n_clusters': n_clusters,
             'method': method_name
         }
-    
+
     def plot_train_test_glucose_comparison(self,
                                           data_root: str = 'data',
                                           model_name: str = None,
@@ -1174,16 +1263,16 @@ class PatientAnalyzer:
                 if len(glucose_values) == 0:
                     continue
                 
-                # Sample if too many
-                if len(glucose_values) > max_samples:
-                    indices = np.random.choice(len(glucose_values), max_samples, replace=False)
-                    sampled_glucose = glucose_values[indices]
-                else:
-                    sampled_glucose = glucose_values
-                
-                glucose_data.extend(sampled_glucose)
-                patient_labels.extend([patient_id] * len(sampled_glucose))
-                mae_values.extend([patient_mae[patient_id]] * len(sampled_glucose))
+                # Each observation is a deterministic 12-reading history, not
+                # an individual value paired with an invented row-order clock.
+                windows = deterministic_glucose_windows(
+                    glucose_values, window_size=12, max_windows=max_samples
+                )
+                if not len(windows):
+                    continue
+                glucose_data.extend(windows)
+                patient_labels.extend([patient_id] * len(windows))
+                mae_values.extend([patient_mae[patient_id]] * len(windows))
             
             plot_data[dataset_type] = {
                 'glucose': np.array(glucose_data),
@@ -1191,7 +1280,7 @@ class PatientAnalyzer:
                 'mae': np.array(mae_values)
             }
             
-            print(f"{dataset_type.capitalize()}: {len(glucose_data)} glucose values from {len(set(patient_labels))} patients")
+            print(f"{dataset_type.capitalize()}: {len(glucose_data)} glucose windows from {len(set(patient_labels))} patients")
         
         # Create t-SNE/PCA embeddings for both datasets
         n_patients = len(patient_ids)
@@ -1200,7 +1289,7 @@ class PatientAnalyzer:
         
         embeddings = {}
         for dataset_type in ['train', 'test']:
-            glucose_array = plot_data[dataset_type]['glucose'].reshape(-1, 1)
+            glucose_array = plot_data[dataset_type]['glucose']
             
             # Standardize
             scaler = StandardScaler()
@@ -1208,17 +1297,11 @@ class PatientAnalyzer:
             
             if use_pca:
                 from sklearn.decomposition import PCA
-                glucose_with_noise = np.column_stack([
-                    glucose_scaled.flatten(), 
-                    np.random.normal(0, 0.1, len(glucose_scaled))
-                ])
                 pca = PCA(n_components=2, random_state=42)
-                embedding = pca.fit_transform(glucose_with_noise)
+                embedding = pca.fit_transform(glucose_scaled)
                 explained_var = f"(Var: {pca.explained_variance_ratio_[0]:.2f}, {pca.explained_variance_ratio_[1]:.2f})"
             else:
-                optimal_perplexity = min(max(5, len(glucose_array) // 100), 50)
-                time_feature = np.arange(len(glucose_array)) / len(glucose_array)
-                glucose_with_time = np.column_stack([glucose_scaled.flatten(), time_feature])
+                optimal_perplexity = min(50, max(2, (len(glucose_array) - 1) // 3))
                 
                 tsne = TSNE(
                     n_components=2,
@@ -1229,7 +1312,7 @@ class PatientAnalyzer:
                     init='pca',
                     metric='euclidean'
                 )
-                embedding = tsne.fit_transform(glucose_with_time)
+                embedding = tsne.fit_transform(glucose_scaled)
                 explained_var = ""
             
             embeddings[dataset_type] = embedding
@@ -1317,648 +1400,6 @@ class PatientAnalyzer:
         
         return plot_data
     
-    def quantify_clusters_statistical_analysis(self, 
-                                              model_name: str = None,
-                                              save_path: str = None,
-                                              n_clusters: int = 3):
-        """
-        Comprehensive statistical analysis to quantify cluster differences.
-        
-        Performs:
-        1. Cluster-wise feature distribution comparison (boxplots)
-        2. ANOVA/Kruskal-Wallis tests for each feature
-        3. Post-hoc pairwise comparisons
-        4. Effect size calculations (Cohen's d)
-        
-        Args:
-            model_name: Model to analyze
-            save_path: Path to save statistical report
-            n_clusters: Number of clusters to create
-            
-        Returns:
-            Dictionary with statistical test results
-        """
-        print(f"\n{'='*60}")
-        print("CLUSTER QUANTIFICATION - STATISTICAL ANALYSIS")
-        print(f"{'='*60}")
-        
-        if self.performance_data is None:
-            self.create_performance_dataframe(model_name)
-        
-        # Perform clustering if not already done
-        if 'performance_group' not in self.performance_data.columns:
-            metric_values = self.performance_data['mae'].values
-            low_thresh = np.percentile(metric_values, 33.33)
-            high_thresh = np.percentile(metric_values, 66.67)
-            
-            performance_groups = []
-            for val in metric_values:
-                if val <= low_thresh:
-                    performance_groups.append('High_Performance')
-                elif val <= high_thresh:
-                    performance_groups.append('Medium_Performance')
-                else:
-                    performance_groups.append('Low_Performance')
-            
-            self.performance_data['performance_group'] = performance_groups
-        
-        # Get feature columns
-        feature_cols = [col for col in self.performance_data.columns 
-                       if col not in ['patient_id', 'mae', 'rmse', 'mape', 'mard', 'tir', 
-                                     'hypo_events', 'hyper_events', 'clarke_a_b', 'parkes_a_b',
-                                     'n_predictions', 'performance_group'] 
-                       and not col.startswith('clarke_zones_') 
-                       and not col.startswith('parkes_zones_')]
-        
-        # Filter low-variance features
-        X_analysis = self.performance_data[feature_cols].values
-        feature_variances = np.var(X_analysis, axis=0)
-        valid_features = feature_variances > 1e-6
-        feature_cols = [feature_cols[i] for i in range(len(feature_cols)) if valid_features[i]]
-        
-        print(f"Analyzing {len(feature_cols)} features across clusters...")
-        
-        # Storage for results
-        statistical_results = {
-            'features': [],
-            'anova_results': [],
-            'pairwise_results': [],
-            'effect_sizes': []
-        }
-        
-        # Perform ANOVA/Kruskal-Wallis for each feature
-        groups = ['High_Performance', 'Medium_Performance', 'Low_Performance']
-        
-        print(f"\n{'='*60}")
-        print("STATISTICAL TESTS FOR EACH FEATURE")
-        print(f"{'='*60}\n")
-        
-        for feature in feature_cols:
-            # Get data for each group
-            group_data = {}
-            for group in groups:
-                mask = self.performance_data['performance_group'] == group
-                group_data[group] = self.performance_data.loc[mask, feature].values
-            
-            # Check normality (Shapiro-Wilk test)
-            normality_pvalues = []
-            for group, data in group_data.items():
-                if len(data) >= 3:
-                    from scipy.stats import shapiro
-                    _, p = shapiro(data)
-                    normality_pvalues.append(p)
-            
-            # Use parametric (ANOVA) if all groups normal, else non-parametric (Kruskal-Wallis)
-            use_parametric = all(p > 0.05 for p in normality_pvalues) if normality_pvalues else False
-            
-            if use_parametric:
-                # One-way ANOVA
-                from scipy.stats import f_oneway
-                stat, p_value = f_oneway(*group_data.values())
-                test_name = "ANOVA"
-            else:
-                # Kruskal-Wallis H-test
-                from scipy.stats import kruskal
-                stat, p_value = kruskal(*group_data.values())
-                test_name = "Kruskal-Wallis"
-            
-            # Store results
-            result = {
-                'feature': feature,
-                'test': test_name,
-                'statistic': stat,
-                'p_value': p_value,
-                'significant': p_value < 0.05,
-                'group_means': {g: np.mean(d) for g, d in group_data.items()},
-                'group_stds': {g: np.std(d) for g, d in group_data.items()}
-            }
-            
-            statistical_results['anova_results'].append(result)
-            
-            # Post-hoc pairwise comparisons if significant
-            if p_value < 0.05:
-                from scipy.stats import mannwhitneyu, ttest_ind
-                
-                pairwise = []
-                for i, g1 in enumerate(groups):
-                    for g2 in groups[i+1:]:
-                        if use_parametric:
-                            stat_pw, p_pw = ttest_ind(group_data[g1], group_data[g2])
-                            test_pw = "t-test"
-                        else:
-                            stat_pw, p_pw = mannwhitneyu(group_data[g1], group_data[g2])
-                            test_pw = "Mann-Whitney U"
-                        
-                        # Calculate Cohen's d effect size
-                        mean1, mean2 = np.mean(group_data[g1]), np.mean(group_data[g2])
-                        std1, std2 = np.std(group_data[g1]), np.std(group_data[g2])
-                        pooled_std = np.sqrt((std1**2 + std2**2) / 2)
-                        cohens_d = (mean1 - mean2) / pooled_std if pooled_std > 0 else 0
-                        
-                        pairwise.append({
-                            'group1': g1,
-                            'group2': g2,
-                            'test': test_pw,
-                            'statistic': stat_pw,
-                            'p_value': p_pw,
-                            'significant': p_pw < 0.05,
-                            'cohens_d': cohens_d,
-                            'effect_size_interpretation': self._interpret_cohens_d(cohens_d)
-                        })
-                
-                statistical_results['pairwise_results'].append({
-                    'feature': feature,
-                    'comparisons': pairwise
-                })
-            
-            # Print summary
-            sig_marker = "***" if p_value < 0.001 else "**" if p_value < 0.01 else "*" if p_value < 0.05 else ""
-            print(f"{feature:30s} | {test_name:15s} | p={p_value:.4f} {sig_marker}")
-        
-        # Create comprehensive visualization
-        self._plot_cluster_distributions(
-            feature_cols, 
-            statistical_results['anova_results'],
-            save_path
-        )
-        
-        # Generate report
-        if save_path:
-            report_path = Path(save_path).parent / f"cluster_statistical_report_{model_name or 'default'}.md"
-            self._generate_cluster_report(statistical_results, report_path, model_name)
-        
-        print(f"\n[OK] Cluster quantification analysis complete")
-        print(f"    Significant features: {sum(1 for r in statistical_results['anova_results'] if r['significant'])}/{len(feature_cols)}")
-        
-        return statistical_results
-    
-    def _interpret_cohens_d(self, d: float) -> str:
-        """Interpret Cohen's d effect size."""
-        d_abs = abs(d)
-        if d_abs < 0.2:
-            return "negligible"
-        elif d_abs < 0.5:
-            return "small"
-        elif d_abs < 0.8:
-            return "medium"
-        else:
-            return "large"
-    
-    def _plot_cluster_distributions(self, feature_cols: List[str], 
-                                   anova_results: List[Dict],
-                                   save_path: str = None):
-        """Create boxplots showing feature distributions across clusters."""
-        # Select top 12 most significant features
-        sorted_results = sorted(anova_results, key=lambda x: x['p_value'])
-        top_features = [r['feature'] for r in sorted_results[:12]]
-        
-        # Create subplot grid
-        n_features = len(top_features)
-        n_cols = 3
-        n_rows = (n_features + n_cols - 1) // n_cols
-        
-        fig, axes = plt.subplots(n_rows, n_cols, figsize=(18, 5*n_rows))
-        axes = axes.flatten() if n_rows > 1 else [axes] if n_cols == 1 else axes
-        
-        fig.suptitle(f'Feature Distributions Across Performance Clusters\n'
-                    f'Top {n_features} Most Discriminative Features',
-                    fontsize=16, fontweight='bold')
-        
-        for idx, feature in enumerate(top_features):
-            ax = axes[idx]
-            
-            # Get result for this feature
-            result = next(r for r in anova_results if r['feature'] == feature)
-            
-            # Create boxplot
-            data_to_plot = []
-            labels = []
-            for group in ['High_Performance', 'Medium_Performance', 'Low_Performance']:
-                mask = self.performance_data['performance_group'] == group
-                data_to_plot.append(self.performance_data.loc[mask, feature].values)
-                labels.append(group.replace('_', '\n'))
-            
-            bp = ax.boxplot(data_to_plot, labels=labels, patch_artist=True,
-                           boxprops=dict(facecolor='lightblue', alpha=0.7),
-                           medianprops=dict(color='red', linewidth=2),
-                           whiskerprops=dict(linewidth=1.5),
-                           capprops=dict(linewidth=1.5))
-            
-            # Color by significance
-            colors = ['#2ecc71', '#f39c12', '#e74c3c']  # green, orange, red
-            for patch, color in zip(bp['boxes'], colors):
-                patch.set_facecolor(color)
-                patch.set_alpha(0.6)
-            
-            # Add title with test result
-            sig_marker = "***" if result['p_value'] < 0.001 else "**" if result['p_value'] < 0.01 else "*" if result['p_value'] < 0.05 else "n.s."
-            ax.set_title(f"{feature}\n{result['test']}: p={result['p_value']:.4f} {sig_marker}",
-                        fontsize=10, fontweight='bold')
-            ax.set_ylabel('Value')
-            ax.grid(axis='y', alpha=0.3)
-            
-            # Rotate x labels
-            ax.tick_params(axis='x', rotation=45)
-        
-        # Hide unused subplots
-        for idx in range(n_features, len(axes)):
-            axes[idx].set_visible(False)
-        
-        plt.tight_layout()
-        
-        if save_path:
-            boxplot_path = Path(save_path).parent / f"cluster_feature_distributions_{Path(save_path).stem}.png"
-            plt.savefig(boxplot_path, dpi=300, bbox_inches='tight')
-            print(f"[OK] Boxplot saved to {boxplot_path}")
-            plt.close()
-        else:
-            plt.show()
-    
-    def _generate_cluster_report(self, results: Dict, report_path: Path, model_name: str = None):
-        """Generate markdown report for cluster analysis."""
-        lines = [
-            f"# Cluster Quantification Statistical Report",
-            f"",
-            f"**Model**: {model_name or 'Default'}",
-            f"**Analysis Date**: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            f"**Experiment**: {self.experiment_name}",
-            f"",
-            f"## Overview",
-            f"",
-            f"This report quantifies the differences between performance clusters using",
-            f"rigorous statistical tests and effect size calculations.",
-            f"",
-            f"## Cluster Definitions",
-            f"",
-            f"- **High Performance**: Low MAE (≤ 33rd percentile)",
-            f"- **Medium Performance**: Medium MAE (33rd-67th percentile)",
-            f"- **Low Performance**: High MAE (≥ 67th percentile)",
-            f"",
-            f"## Statistical Test Results",
-            f"",
-            f"### Significant Features (p < 0.05)",
-            f""
-        ]
-        
-        # Add significant features
-        sig_results = [r for r in results['anova_results'] if r['significant']]
-        sig_results.sort(key=lambda x: x['p_value'])
-        
-        lines.append(f"| Feature | Test | Statistic | p-value | High Mean±SD | Medium Mean±SD | Low Mean±SD |")
-        lines.append(f"|---------|------|-----------|---------|--------------|----------------|-------------|")
-        
-        for r in sig_results:
-            lines.append(
-                f"| {r['feature']} | {r['test']} | {r['statistic']:.3f} | {r['p_value']:.4f} | "
-                f"{r['group_means']['High_Performance']:.2f}±{r['group_stds']['High_Performance']:.2f} | "
-                f"{r['group_means']['Medium_Performance']:.2f}±{r['group_stds']['Medium_Performance']:.2f} | "
-                f"{r['group_means']['Low_Performance']:.2f}±{r['group_stds']['Low_Performance']:.2f} |"
-            )
-        
-        # Add pairwise comparisons
-        lines.extend([
-            f"",
-            f"## Post-Hoc Pairwise Comparisons",
-            f""
-        ])
-        
-        for pw_result in results['pairwise_results']:
-            lines.append(f"### {pw_result['feature']}")
-            lines.append(f"")
-            lines.append(f"| Comparison | Test | p-value | Cohen's d | Effect Size |")
-            lines.append(f"|------------|------|---------|-----------|-------------|")
-            
-            for comp in pw_result['comparisons']:
-                g1_short = comp['group1'].replace('_Performance', '')
-                g2_short = comp['group2'].replace('_Performance', '')
-                sig = "*" if comp['significant'] else ""
-                lines.append(
-                    f"| {g1_short} vs {g2_short} | {comp['test']} | "
-                    f"{comp['p_value']:.4f}{sig} | {comp['cohens_d']:.3f} | "
-                    f"{comp['effect_size_interpretation']} |"
-                )
-            lines.append(f"")
-        
-        # Save report
-        with open(report_path, 'w') as f:
-            f.write('\n'.join(lines))
-        
-        print(f"[OK] Statistical report saved to {report_path}")
-    
-    def fit_explanatory_model(self, 
-                             model_name: str = None,
-                             save_path: str = None,
-                             model_type: str = 'both'):
-        """
-        Fit explanatory models to understand feature importance for MAE prediction.
-        
-        Performs:
-        1. Linear regression with regularization
-        2. Random forest for non-linear relationships
-        3. Feature importance ranking
-        4. Model performance metrics (R², RMSE, MAE)
-        
-        Args:
-            model_name: Model to analyze
-            save_path: Path to save results
-            model_type: 'linear', 'tree', or 'both'
-            
-        Returns:
-            Dictionary with model results and feature importances
-        """
-        print(f"\n{'='*60}")
-        print("EXPLANATORY MODEL - FEATURE IMPORTANCE ANALYSIS")
-        print(f"{'='*60}")
-        
-        if self.performance_data is None:
-            self.create_performance_dataframe(model_name)
-        
-        # Prepare features and target
-        feature_cols = [col for col in self.performance_data.columns 
-                       if col not in ['patient_id', 'mae', 'rmse', 'mape', 'mard', 'tir', 
-                                     'hypo_events', 'hyper_events', 'clarke_a_b', 'parkes_a_b',
-                                     'n_predictions', 'performance_group'] 
-                       and not col.startswith('clarke_zones_') 
-                       and not col.startswith('parkes_zones_')]
-        
-        # Filter low-variance features
-        X = self.performance_data[feature_cols].values
-        feature_variances = np.var(X, axis=0)
-        valid_features = feature_variances > 1e-6
-        feature_cols = [feature_cols[i] for i in range(len(feature_cols)) if valid_features[i]]
-        X = X[:, valid_features]
-        
-        y = self.performance_data['mae'].values
-        
-        print(f"Training explanatory models with {len(feature_cols)} features")
-        print(f"Target: MAE (range: {np.min(y):.3f} - {np.max(y):.3f} mg/dL)")
-        
-        # Standardize features
-        from sklearn.preprocessing import StandardScaler
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
-        
-        results = {
-            'feature_names': feature_cols,
-            'target_stats': {
-                'mean': np.mean(y),
-                'std': np.std(y),
-                'min': np.min(y),
-                'max': np.max(y)
-            }
-        }
-        
-        # Model 1: Ridge Regression (L2 regularization)
-        if model_type in ['linear', 'both']:
-            from sklearn.linear_model import RidgeCV
-            from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
-            
-            print(f"\n--- Ridge Regression ---")
-            ridge = RidgeCV(alphas=[0.01, 0.1, 1.0, 10.0, 100.0], cv=3)
-            ridge.fit(X_scaled, y)
-            
-            y_pred = ridge.predict(X_scaled)
-            r2 = r2_score(y, y_pred)
-            rmse = np.sqrt(mean_squared_error(y, y_pred))
-            mae = mean_absolute_error(y, y_pred)
-            
-            # Feature importances (absolute coefficients)
-            feature_importance = np.abs(ridge.coef_)
-            feature_ranking = sorted(zip(feature_cols, feature_importance, ridge.coef_), 
-                                   key=lambda x: x[1], reverse=True)
-            
-            results['ridge'] = {
-                'r2': r2,
-                'rmse': rmse,
-                'mae': mae,
-                'best_alpha': ridge.alpha_,
-                'coefficients': ridge.coef_.tolist(),
-                'feature_importance': feature_ranking
-            }
-            
-            print(f"R² Score: {r2:.4f}")
-            print(f"RMSE: {rmse:.4f} mg/dL")
-            print(f"MAE: {mae:.4f} mg/dL")
-            print(f"Best alpha: {ridge.alpha_}")
-            print(f"\nTop 10 Most Important Features:")
-            for i, (feat, importance, coef) in enumerate(feature_ranking[:10], 1):
-                direction = "↑" if coef > 0 else "↓"
-                print(f"  {i:2d}. {feat:30s} | Importance: {importance:.4f} | Coef: {coef:+.4f} {direction}")
-        
-        # Model 2: Random Forest
-        if model_type in ['tree', 'both']:
-            from sklearn.ensemble import RandomForestRegressor
-            from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
-            
-            print(f"\n--- Random Forest ---")
-            rf = RandomForestRegressor(
-                n_estimators=100,
-                max_depth=5,
-                min_samples_split=2,
-                min_samples_leaf=1,
-                random_state=42,
-                n_jobs=-1
-            )
-            rf.fit(X, y)  # Use original scale for tree-based model
-            
-            y_pred_rf = rf.predict(X)
-            r2_rf = r2_score(y, y_pred_rf)
-            rmse_rf = np.sqrt(mean_squared_error(y, y_pred_rf))
-            mae_rf = mean_absolute_error(y, y_pred_rf)
-            
-            # Feature importances
-            feature_importance_rf = rf.feature_importances_
-            feature_ranking_rf = sorted(zip(feature_cols, feature_importance_rf), 
-                                       key=lambda x: x[1], reverse=True)
-            
-            results['random_forest'] = {
-                'r2': r2_rf,
-                'rmse': rmse_rf,
-                'mae': mae_rf,
-                'feature_importance': feature_ranking_rf
-            }
-            
-            print(f"R² Score: {r2_rf:.4f}")
-            print(f"RMSE: {rmse_rf:.4f} mg/dL")
-            print(f"MAE: {mae_rf:.4f} mg/dL")
-            print(f"\nTop 10 Most Important Features:")
-            for i, (feat, importance) in enumerate(feature_ranking_rf[:10], 1):
-                print(f"  {i:2d}. {feat:30s} | Importance: {importance:.4f}")
-        
-        # Create visualization
-        self._plot_feature_importance(results, save_path, model_type)
-        
-        # Generate report
-        if save_path:
-            report_path = Path(save_path).parent / f"explanatory_model_report_{model_name or 'default'}.md"
-            self._generate_model_report(results, report_path, model_name, model_type)
-        
-        print(f"\n[OK] Explanatory model analysis complete")
-        
-        return results
-    
-    def _plot_feature_importance(self, results: Dict, save_path: str = None, model_type: str = 'both'):
-        """Create feature importance visualization."""
-        if model_type == 'both':
-            fig, axes = plt.subplots(1, 2, figsize=(18, 8))
-        else:
-            fig, axes = plt.subplots(1, 1, figsize=(10, 8))
-            axes = [axes]
-        
-        fig.suptitle('Feature Importance for MAE Prediction', fontsize=16, fontweight='bold')
-        
-        plot_idx = 0
-        
-        # Ridge regression plot
-        if 'ridge' in results:
-            ax = axes[plot_idx]
-            plot_idx += 1
-            
-            top_features = results['ridge']['feature_importance'][:15]
-            features = [f[0] for f in top_features]
-            coefficients = [f[2] for f in top_features]
-            
-            colors = ['red' if c > 0 else 'blue' for c in coefficients]
-            bars = ax.barh(range(len(features)), coefficients, color=colors, alpha=0.7)
-            ax.set_yticks(range(len(features)))
-            ax.set_yticklabels(features, fontsize=9)
-            ax.set_xlabel('Coefficient (standardized)', fontsize=11)
-            ax.set_title(f"Ridge Regression (R² = {results['ridge']['r2']:.3f})\n"
-                        f"Red = increases MAE, Blue = decreases MAE", 
-                        fontsize=12, fontweight='bold')
-            ax.axvline(x=0, color='black', linestyle='-', alpha=0.3)
-            ax.grid(axis='x', alpha=0.3)
-        
-        # Random forest plot
-        if 'random_forest' in results:
-            ax = axes[plot_idx]
-            
-            top_features_rf = results['random_forest']['feature_importance'][:15]
-            features_rf = [f[0] for f in top_features_rf]
-            importances_rf = [f[1] for f in top_features_rf]
-            
-            bars_rf = ax.barh(range(len(features_rf)), importances_rf, color='green', alpha=0.7)
-            ax.set_yticks(range(len(features_rf)))
-            ax.set_yticklabels(features_rf, fontsize=9)
-            ax.set_xlabel('Feature Importance', fontsize=11)
-            ax.set_title(f"Random Forest (R² = {results['random_forest']['r2']:.3f})\n"
-                        f"Importance = mean decrease in impurity", 
-                        fontsize=12, fontweight='bold')
-            ax.grid(axis='x', alpha=0.3)
-        
-        plt.tight_layout()
-        
-        if save_path:
-            importance_path = Path(save_path).parent / f"feature_importance_{Path(save_path).stem}.png"
-            plt.savefig(importance_path, dpi=300, bbox_inches='tight')
-            print(f"[OK] Feature importance plot saved to {importance_path}")
-            plt.close()
-        else:
-            plt.show()
-    
-    def _generate_model_report(self, results: Dict, report_path: Path, 
-                              model_name: str = None, model_type: str = 'both'):
-        """Generate markdown report for explanatory models."""
-        lines = [
-            f"# Explanatory Model Report",
-            f"",
-            f"**Model**: {model_name or 'Default'}",
-            f"**Analysis Date**: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            f"**Experiment**: {self.experiment_name}",
-            f"",
-            f"## Overview",
-            f"",
-            f"This report presents explanatory models that predict patient MAE from",
-            f"glucose characteristics. The models provide quantitative evidence for",
-            f"which features drive forecast difficulty.",
-            f"",
-            f"## Target Variable (MAE)",
-            f"",
-            f"- Mean: {results['target_stats']['mean']:.3f} mg/dL",
-            f"- Std: {results['target_stats']['std']:.3f} mg/dL",
-            f"- Range: [{results['target_stats']['min']:.3f}, {results['target_stats']['max']:.3f}] mg/dL",
-            f""
-        ]
-        
-        # Ridge regression results
-        if 'ridge' in results:
-            r = results['ridge']
-            lines.extend([
-                f"## Ridge Regression Results",
-                f"",
-                f"### Model Performance",
-                f"",
-                f"- **R² Score**: {r['r2']:.4f}",
-                f"- **RMSE**: {r['rmse']:.4f} mg/dL",
-                f"- **MAE**: {r['mae']:.4f} mg/dL",
-                f"- **Best Alpha**: {r['best_alpha']}",
-                f"",
-                f"**Interpretation**: The model explains {r['r2']*100:.1f}% of the variance in patient MAE.",
-                f"",
-                f"### Top 15 Features (by absolute coefficient)",
-                f"",
-                f"| Rank | Feature | Coefficient | Abs. Importance | Effect |",
-                f"|------|---------|-------------|-----------------|--------|"
-            ])
-            
-            for i, (feat, importance, coef) in enumerate(r['feature_importance'][:15], 1):
-                effect = "Increases MAE" if coef > 0 else "Decreases MAE"
-                lines.append(f"| {i} | {feat} | {coef:+.4f} | {importance:.4f} | {effect} |")
-            
-            lines.append(f"")
-        
-        # Random forest results
-        if 'random_forest' in results:
-            r = results['random_forest']
-            lines.extend([
-                f"## Random Forest Results",
-                f"",
-                f"### Model Performance",
-                f"",
-                f"- **R² Score**: {r['r2']:.4f}",
-                f"- **RMSE**: {r['rmse']:.4f} mg/dL",
-                f"- **MAE**: {r['mae']:.4f} mg/dL",
-                f"",
-                f"**Interpretation**: The model explains {r['r2']*100:.1f}% of the variance in patient MAE.",
-                f"",
-                f"### Top 15 Features (by importance)",
-                f"",
-                f"| Rank | Feature | Importance |",
-                f"|------|---------|------------|"
-            ])
-            
-            for i, (feat, importance) in enumerate(r['feature_importance'][:15], 1):
-                lines.append(f"| {i} | {feat} | {importance:.4f} |")
-            
-            lines.append(f"")
-        
-        # Add interpretation
-        lines.extend([
-            f"## Key Findings",
-            f"",
-            f"### Confirmed Predictors of Forecast Difficulty",
-            f""
-        ])
-        
-        # Compare top features from both models if available
-        if 'ridge' in results and 'random_forest' in results:
-            ridge_top = set([f[0] for f in results['ridge']['feature_importance'][:10]])
-            rf_top = set([f[0] for f in results['random_forest']['feature_importance'][:10]])
-            common = ridge_top.intersection(rf_top)
-            
-            if common:
-                lines.append(f"Features important in **both** models (robust predictors):")
-                lines.append(f"")
-                for feat in common:
-                    lines.append(f"- `{feat}`")
-                lines.append(f"")
-        
-        # Save report
-        with open(report_path, 'w') as f:
-            f.write('\n'.join(lines))
-        
-        print(f"[OK] Explanatory model report saved to {report_path}")
-    
     def analyze_patient_subgroups(self, model_name: str = None, metric: str = 'mae'):
         """
         Analyze patient subgroups based on performance.
@@ -1991,11 +1432,12 @@ class PatientAnalyzer:
         
         self.performance_data['performance_group'] = performance_groups
         
-        # Analyze differences between groups
-        feature_cols = [col for col in self.performance_data.columns 
-                       if col not in ['patient_id', 'mae', 'rmse', 'mape', 'mard', 'tir', 
-                                     'hypo_events', 'hyper_events', 'clarke_a_b', 'parkes_a_b',
-                                     'n_predictions', 'performance_group'] and not col.startswith('clarke_zones_') and not col.startswith('parkes_zones_')]
+        # Restrict explanatory analysis to held-out glucose characteristics.
+        # Including model-output metrics here would compare MAE against another
+        # measurement of prediction quality rather than a patient feature.
+        feature_cols = [
+            column for column in self.GLUCOSE_FEATURE_COLUMNS if column in self.performance_data
+        ]
         
         # Filter out low-variance features for better analysis
         X_analysis = self.performance_data[feature_cols].values
@@ -2045,28 +1487,49 @@ class PatientAnalyzer:
             significant_features = []
             
             for feature in filtered_feature_cols:  # Use filtered features
-                high_values = high_perf_data[feature].values
-                low_values = low_perf_data[feature].values
+                high_values = pd.to_numeric(high_perf_data[feature], errors='coerce').to_numpy()
+                low_values = pd.to_numeric(low_perf_data[feature], errors='coerce').to_numpy()
+                high_values = high_values[np.isfinite(high_values)]
+                low_values = low_values[np.isfinite(low_values)]
                 
                 if len(high_values) >= 2 and len(low_values) >= 2:
-                    t_stat, p_value = stats.ttest_ind(high_values, low_values)
-                    
-                    effect_size = (np.mean(high_values) - np.mean(low_values)) / np.sqrt(
+                    t_stat, p_value = stats.ttest_ind(
+                        high_values, low_values, equal_var=False
+                    )
+
+                    pooled_std = np.sqrt(
                         ((len(high_values) - 1) * np.var(high_values, ddof=1) + 
                          (len(low_values) - 1) * np.var(low_values, ddof=1)) / 
-                        (len(high_values) + len(low_values) - 2)
+                         (len(high_values) + len(low_values) - 2)
                     )
+                    difference = float(np.mean(high_values) - np.mean(low_values))
+                    effect_size = difference / pooled_std if pooled_std > 0 else np.nan
                     
                     significant_features.append({
                         'feature': feature,
                         'high_mean': np.mean(high_values),
                         'low_mean': np.mean(low_values),
-                        'difference': np.mean(high_values) - np.mean(low_values),
+                        'difference': difference,
                         't_stat': t_stat,
                         'p_value': p_value,
                         'effect_size': effect_size,
-                        'significant': p_value < 0.05
+                        'significant_raw': p_value < 0.05,
+                        'grouping_note': 'exploratory; groups were derived from MAE',
                     })
+
+            # These are data-derived subgroups and many feature screens, so
+            # they are exploratory even after correction.  BH controls the
+            # named within-report feature family; raw p-values remain visible.
+            if significant_features:
+                from statsmodels.stats.multitest import multipletests
+                raw = np.asarray([item['p_value'] for item in significant_features], dtype=float)
+                adjusted = np.full(raw.shape, np.nan, dtype=float)
+                valid = np.isfinite(raw)
+                if valid.any():
+                    adjusted[valid] = multipletests(raw[valid], method='fdr_bh')[1]
+                for item, value in zip(significant_features, adjusted):
+                    item['p_value_bh'] = float(value)
+                    item['significant_bh'] = bool(np.isfinite(value) and value < 0.05)
             
             # Sort by p-value
             significant_features.sort(key=lambda x: x['p_value'])
@@ -2076,7 +1539,7 @@ class PatientAnalyzer:
             print("-" * 80)
             
             for sf in significant_features[:10]:
-                sig_marker = "***" if sf['p_value'] < 0.001 else "**" if sf['p_value'] < 0.01 else "*" if sf['p_value'] < 0.05 else ""
+                sig_marker = "*" if sf.get('significant_bh') else ""
                 print(f"{sf['feature']:<20} {sf['high_mean']:<10.3f} {sf['low_mean']:<10.3f} "
                       f"{sf['difference']:<8.3f} {sf['p_value']:<8.4f} {sig_marker}")
         
@@ -2097,7 +1560,7 @@ class PatientAnalyzer:
         else:
             output_dir = Path(output_dir)
         
-        output_dir.mkdir(exist_ok=True)
+        output_dir.mkdir(parents=True, exist_ok=True)
         
         print(f"\n{'='*60}")
         print("GENERATING PATIENT COMPARISON REPORT")
@@ -2140,6 +1603,14 @@ class PatientAnalyzer:
         # Save feature correlations
         corr_df = pd.DataFrame(feature_correlations)
         corr_df.to_csv(output_dir / "feature_correlations.csv", index=False)
+
+        glucose_feature_columns = [
+            column for column in self.GLUCOSE_FEATURE_COLUMNS if column in self.performance_data
+        ]
+        loo = leave_one_patient_out_explanatory_models(
+            self.performance_data, glucose_feature_columns, outcome="mae"
+        )
+        loo.to_csv(output_dir / "loo_explanatory_predictions.csv", index=False)
         
         # Save significant features
         if significant_features:
@@ -2215,6 +1686,7 @@ class PatientAnalyzer:
             f"- `significant_features.csv`: Features distinguishing high/low performers",
             f"- `patient_glucose_stats.csv`: Patient glucose distribution statistics",
             f"- `group_analysis.json`: Detailed subgroup analysis",
+            f"- `loo_explanatory_predictions.csv`: exploratory leave-one-patient-out Ridge and forest predictions",
             f""
         ])
         
@@ -2233,20 +1705,24 @@ class PatientAnalyzer:
         print(f"  - PATIENT_ANALYSIS_SUMMARY.md")
 
 
-def analyze_patients(experiment_dir: str, 
+def analyze_patients(experiment_dir: str,
                     experiment_name: str = None,
                     model_name: str = None,
-                    output_dir: str = None):
+                    output_dir: str = None,
+                    mode: Optional[str] = None,
+                    seed: Optional[int] = None):
     """
     Convenience function to analyze patients within an experiment.
-    
+
     Args:
         experiment_dir: Path to experiment directory
         experiment_name: Optional name for the experiment
-        model_name: Model to analyze
+        model_name: Model to analyze. Defaults to the run's only model.
         output_dir: Directory to save results
+        mode: Training mode to analyse; required only for multi-mode runs
+        seed: Analyse this seed alone instead of the cross-seed mean
     """
-    analyzer = PatientAnalyzer(experiment_dir, experiment_name)
+    analyzer = PatientAnalyzer(experiment_dir, experiment_name, mode=mode, seed=seed)
     analyzer.load_experiment_results()
     analyzer.create_patient_comparison_report(model_name, output_dir)
     
