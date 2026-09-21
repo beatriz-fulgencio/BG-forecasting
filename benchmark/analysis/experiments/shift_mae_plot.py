@@ -21,7 +21,7 @@ HORIZON_COLORS: Dict[int, str] = {
 _REQUIRED_COLUMNS = ("horizon", "shift_score", "mae")
 
 
-def _plottable(df: pd.DataFrame, horizons: Optional[Sequence[int]] = None) -> pd.DataFrame:
+def _plottable(df: pd.DataFrame, horizons: Optional[Sequence[int]] = None):
     """Drop rows that cannot be plotted, and optionally restrict to horizons.
 
     The analysis table carries a row for every patient at every horizon, with
@@ -42,12 +42,12 @@ def _plottable(df: pd.DataFrame, horizons: Optional[Sequence[int]] = None) -> pd
     return df.loc[finite].copy()
 
 
-def _correlation_is_defined(g: pd.DataFrame) -> bool:
+def _correlation_is_defined(g: pd.DataFrame):
     """Pearson/Spearman need enough rows and variation in both variables."""
     return len(g) >= 3 and g["shift_score"].nunique() >= 2 and g["mae"].nunique() >= 2
 
 
-def _trend_line(ax, g: pd.DataFrame, color, linewidth: float) -> None:
+def _trend_line(ax, g: pd.DataFrame, color, linewidth: float):
     if len(g) >= 2 and g["shift_score"].nunique() >= 2:
         slope, intercept = np.polyfit(g["shift_score"], g["mae"], 1)
         xs = np.linspace(g["shift_score"].min(), g["shift_score"].max(), 50)
@@ -59,7 +59,7 @@ def plot_shift_vs_mae(df: pd.DataFrame,
                       output_path: str,
                       model_name: str = "GRU",
                       horizons: Optional[Sequence[int]] = None,
-                      title: Optional[str] = None) -> str:
+                      title: Optional[str] = None):
     """
     Render the shift_score-vs-MAE scatter (single panel, colored by horizon).
 
@@ -117,7 +117,7 @@ def plot_shift_vs_mae(df: pd.DataFrame,
 def plot_shift_vs_mae_faceted(df: pd.DataFrame,
                               horizons: Sequence[int],
                               output_path: str,
-                              model_name: str = "GRU") -> str:
+                              model_name: str = "GRU"):
     """
     Render one shift_score-vs-MAE panel per horizon on a shared grid.
 

@@ -31,28 +31,8 @@ from ..results_io import load_experiment_results, load_predictions
 #: Clinical threshold used by this analysis's one-interval rapid-change proxy.
 RAPID_RATE_MG_DL_PER_MIN = 3.0
 
-IMPLEMENTATION_REFERENCES = {
-    "rapid_threshold": {
-        "implementation": "Klonoff & Kerr / Dexcom >3 mg/dL/min threshold",
-        "reference": "Klonoff DC, Kerr D. J Diabetes Sci Technol. 2017;11:1063-1069.",
-        "url": "https://doi.org/10.1177/1932296817723260",
-    },
-    "timestamped_delta": {
-        "implementation": "one-interval proxy; timestamped delta concept",
-        "reference": "OpenAPS oref0",
-        "url": "https://github.com/openaps/oref0",
-        "license": "MIT",
-    },
-    "percentile_bootstrap": {
-        "implementation": "NumPy resampling; percentile endpoints",
-        "reference": "SciPy scipy.stats.bootstrap documentation",
-        "url": "https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.bootstrap.html",
-        "license": "BSD-3-Clause",
-    },
-}
 
-
-def rapid_threshold_mg_dl(sampling_rate_minutes: int) -> float:
+def rapid_threshold_mg_dl(sampling_rate_minutes: int):
     """The step for the one-interval rapid-change proxy.
 
     15 mg/dL at the 5-minute sampling every config in this repository uses.
@@ -154,7 +134,7 @@ def rapid_change_metrics(
 
 def _bootstrap_summary(
     rows: pd.DataFrame, *, replicates: int, random_seed: int
-) -> Dict[str, Any]:
+):
     """Nested patient and seed-set percentile intervals for one result cell.
 
     Each replicate resamples the whole observed seed set with replacement and
@@ -201,7 +181,7 @@ def _bootstrap_summary(
     return output
 
 
-def _rate_phrase(per_seed_patient: pd.DataFrame) -> str:
+def _rate_phrase(per_seed_patient: pd.DataFrame):
     """Describe the applied threshold as a rate, plus the step it came to."""
     parts = sorted({
         (round(float(r.rapid_threshold_mg_dl) / int(r.sampling_rate_minutes), 6),
@@ -217,7 +197,7 @@ def _rate_phrase(per_seed_patient: pd.DataFrame) -> str:
 def analyze_rapid_change_runs(
     run_dirs: Sequence[Path], *, threshold_mg_dl: Optional[float] = None,
     bootstrap_replicates: int = 10_000, bootstrap_seed: int = 42,
-) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, Any]]:
+):
     """Load configured seed runs, localize errors, and form nested intervals."""
     if not run_dirs:
         raise ValueError("At least one configured single-seed run directory is required")
@@ -348,12 +328,11 @@ def analyze_rapid_change_runs(
         "gap_policy": "rows without exactly contiguous timestamps, including duplicates, are excluded",
         "bootstrap_replicates": bootstrap_replicates,
         "bootstrap_seed": bootstrap_seed,
-        "implementation_references": IMPLEMENTATION_REFERENCES,
     }
     return per_seed_patient, summary_table, summary
 
 
-def plot_rapid_change(summary_table: pd.DataFrame, output_path: Path) -> None:
+def plot_rapid_change(summary_table: pd.DataFrame, output_path: Path):
     """Plot MAE/RMSE by rapid-change condition using Matplotlib (PSF-based)."""
     import matplotlib.pyplot as plt
 

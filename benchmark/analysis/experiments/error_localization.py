@@ -194,7 +194,7 @@ def load_patient_points(
     patient_id: int,
     *,
     model: Optional[str] = None,
-) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+) :
     """Load one patient's predictions across the training seeds of one cell.
     Args:
         run_dirs: One configured ``<mode>/seed_<n>`` directory per training seed.
@@ -276,7 +276,7 @@ def load_patient_points(
     return pooled, metadata
 
 
-def _cell_caption(metadata: Dict[str, Any]) -> str:
+def _cell_caption(metadata: Dict[str, Any]):
     seeds = metadata["training_seeds"]
     seed_text = f"seed {seeds[0]}" if len(seeds) == 1 else f"seeds {', '.join(map(str, seeds))} pooled"
     return (
@@ -294,7 +294,7 @@ def plot_error_localization(
     threshold_mg_dl: Optional[float] = None,
     min_interpretable_n: int = MIN_INTERPRETABLE_N,
     bins: int = 24,
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+):
     """Draw the four-panel error-localization figure for one patient.
 
     Panels, clockwise from top left:
@@ -331,7 +331,7 @@ def plot_error_localization(
     labels = [ISO_BAND_LABELS[band] for band in ISO_BANDS]
     colors = [ISO_BAND_COLORS[band] for band in ISO_BANDS]
 
-    def _style_band_axis(axis, values: np.ndarray) -> None:
+    def _style_band_axis(axis, values: np.ndarray):
         axis.set_xticks(positions)
         axis.set_xticklabels(labels, fontsize=8)
         axis.set_xlabel("Reference glucose range (mg/dL)", fontsize=9)
@@ -340,7 +340,7 @@ def plot_error_localization(
         # with the axis frame on whichever band happens to be tallest.
         _add_headroom(axis, values)
 
-    def _add_headroom(axis, values: np.ndarray, fraction: float = 0.18) -> None:
+    def _add_headroom(axis, values: np.ndarray, fraction: float = 0.18):
         finite = np.asarray(values, dtype=float)
         finite = finite[np.isfinite(finite)]
         if finite.size == 0:
@@ -352,7 +352,7 @@ def plot_error_localization(
             max(high, finite.max() + fraction * span),
         )
 
-    def _draw_bars(axis, values: np.ndarray) -> None:
+    def _draw_bars(axis, values: np.ndarray):
         """Bars, with non-interpretable bands hatched and their count called out."""
         for position, value, color, (_, row) in zip(positions, values, colors, bands.iterrows()):
             if not np.isfinite(value):
@@ -665,7 +665,7 @@ def plot_clarke_localized(
     *,
     threshold_mg_dl: Optional[float] = None,
     point_size: float = 9.0,
-) -> pd.DataFrame:
+):
     """Draw the Clarke grid twice, coloured by glycemic band and by rate of change.
     
     Predictions are clipped to the sensor range for this figure only, matching

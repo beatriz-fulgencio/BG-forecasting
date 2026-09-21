@@ -31,7 +31,7 @@ def generate_evaluation_report(model: Any,
                               test_data: Any, 
                               metrics: Dict[str, Union[float, Dict]],
                               prediction_horizon: int = 30,
-                              patient_id: Optional[str] = None) -> Dict[str, Any]:
+                              patient_id: Optional[str] = None):
     """
     Generate a comprehensive evaluation report for a blood glucose forecasting model.
     
@@ -79,7 +79,7 @@ def generate_evaluation_report(model: Any,
 def export_metrics_to_csv(metrics: Dict[str, Union[float, Dict]], 
                          filepath: str,
                          model_name: Optional[str] = None,
-                         append: bool = False) -> None:
+                         append: bool = False):
     """
     Export evaluation metrics to a CSV file.
     
@@ -159,7 +159,7 @@ def export_metrics_to_json(metrics: Dict[str, Union[float, Dict]],
                           filepath: str,
                           model_name: Optional[str] = None,
                           patient_id: Optional[str] = None,
-                          append: bool = False) -> None:
+                          append: bool = False):
     """
     Export evaluation metrics to a JSON file with ordered structure:
     1. Metadata (model, patient_id, timestamp)
@@ -250,7 +250,7 @@ def export_metrics_to_json(metrics: Dict[str, Union[float, Dict]],
 
 
 def generate_model_comparison_report(model_metrics: Dict[str, Dict[str, Union[float, Dict]]],
-                                    output_format: str = 'dict') -> Union[Dict, str, pd.DataFrame]:
+                                    output_format: str = 'dict'):
     """
     Generate a comparison report between multiple models.
     
@@ -341,7 +341,7 @@ def generate_model_comparison_report(model_metrics: Dict[str, Dict[str, Union[fl
 
 def export_comparison_to_file(model_metrics: Dict[str, Dict[str, Union[float, Dict]]],
                              filepath: str,
-                             output_format: str = None) -> None:
+                             output_format: str = None):
     """
     Export a model comparison report to a file.
     
@@ -395,7 +395,7 @@ def export_comparison_to_file(model_metrics: Dict[str, Dict[str, Union[float, Di
 
 
 def generate_patient_comparison_report(patient_metrics: Dict[str, Dict[str, Dict[str, Union[float, Dict]]]],
-                                      output_format: str = 'dict') -> Union[Dict, str, pd.DataFrame]:
+                                      output_format: str = 'dict'):
     """
     Generate a comparison report across multiple patients and models.
     
@@ -519,7 +519,7 @@ def generate_patient_comparison_report(patient_metrics: Dict[str, Dict[str, Dict
         raise ValueError(f"Unsupported output format: {output_format}")
 
 
-def load_metrics_from_json(filepath: str) -> Dict[str, Any]:
+def load_metrics_from_json(filepath: str):
     """
     Load evaluation metrics from a JSON file.
     
@@ -533,7 +533,7 @@ def load_metrics_from_json(filepath: str) -> Dict[str, Any]:
         return json.load(f)
 
 
-def aggregate_patient_metrics(patient_results: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+def aggregate_patient_metrics(patient_results: Dict[str, Dict[str, Any]]):
     """
     Aggregate metrics across multiple patients.
     
@@ -579,7 +579,7 @@ def generate_latex_report(model_metrics: Dict[str, Dict[str, Union[float, Dict]]
                          output_dir: str,
                          report_title: str = "Blood Glucose Forecasting Model Comparison Report",
                          author: str = "BG-Forecasting System",
-                         include_visualizations: bool = True) -> str:
+                         include_visualizations: bool = True):
     """
     Generate a comprehensive LaTeX report with model comparison and visualizations.
     

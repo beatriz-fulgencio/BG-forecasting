@@ -1,7 +1,5 @@
 """Experiment configuration."""
 
-from __future__ import annotations
-
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
@@ -28,7 +26,7 @@ class ConfigError(ValueError):
     """Raised when an experiment configuration is invalid."""
 
 
-def _mapping(value: Any, path: str) -> Mapping[str, Any]:
+def _mapping(value: Any, path: str):
     if not isinstance(value, Mapping):
         raise ConfigError(f"{path} must be a mapping")
     return value
@@ -80,7 +78,7 @@ class ExperimentMetadata:
     author: str = ""
 
     @classmethod
-    def from_dict(cls, raw: Any) -> "ExperimentMetadata":
+    def from_dict(cls, raw: Any):
         data = _mapping(raw, "experiment")
         _reject_unknown(data, ("name", "description", "author"), "experiment")
         if "name" not in data:
@@ -107,7 +105,7 @@ class DataConfig:
     validation_ratio: float = 0.1
 
     @classmethod
-    def from_dict(cls, raw: Any) -> "DataConfig":
+    def from_dict(cls, raw: Any):
         data = _mapping(raw, "data")
         _reject_unknown(
             data,
@@ -147,10 +145,10 @@ class DataConfig:
             raise ConfigError("data train and validation ratios must both be greater than 0")
         return cls(dataset, root, version, patients, train_ratio, validation_ratio)
 
-    def patient_ids(self) -> List[int]:
+    def patient_ids(self):
         return list(OHIO_PATIENTS[self.version]) if self.patients == "all" else list(self.patients)
 
-    def version_for_patient(self, patient_id: int) -> str:
+    def version_for_patient(self, patient_id: int):
         """Resolve a selected patient to its original OhioT1DM release."""
         if patient_id not in self.patient_ids():
             raise ConfigError(f"Patient {patient_id} is not selected in data.patients")
@@ -170,7 +168,7 @@ class PreprocessingConfig:
     normalization: str = "standardize"
 
     @classmethod
-    def from_dict(cls, raw: Any) -> "PreprocessingConfig":
+    def from_dict(cls, raw: Any):
         data = _mapping(raw, "preprocessing")
         _reject_unknown(
             data,
@@ -200,7 +198,7 @@ class ModelConfig:
     architecture: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, raw: Any) -> "ModelConfig":
+    def from_dict(cls, raw: Any):
         data = _mapping(raw, "model")
         _reject_unknown(data, ("type", "architecture"), "model")
         if "type" not in data:
@@ -289,7 +287,7 @@ class TrainingConfig:
     device: str = "auto"
 
     @classmethod
-    def from_dict(cls, raw: Any) -> "TrainingConfig":
+    def from_dict(cls, raw: Any):
         data = _mapping(raw, "training")
         _reject_unknown(
             data,
@@ -352,7 +350,7 @@ class EvaluationConfig:
     metrics: List[str] = field(default_factory=lambda: ["mae", "rmse", "mard"])
 
     @classmethod
-    def from_dict(cls, raw: Any) -> "EvaluationConfig":
+    def from_dict(cls, raw: Any):
         data = _mapping(raw, "evaluation")
         _reject_unknown(data, ("metrics",), "evaluation")
         metrics = data.get("metrics", ["mae", "rmse", "mard"])
@@ -380,7 +378,7 @@ class OutputConfig:
     export_format: List[str] = field(default_factory=lambda: ["json", "csv"])
 
     @classmethod
-    def from_dict(cls, raw: Any) -> "OutputConfig":
+    def from_dict(cls, raw: Any):
         data = _mapping(raw, "output")
         _reject_unknown(data, ("directory", "save_model", "save_predictions", "generate_plots", "export_format"), "output")
         formats = data.get("export_format", ["json", "csv"])
@@ -409,13 +407,13 @@ class ExperimentConfig:
     output: OutputConfig
     source_path: Path = field(compare=False, repr=False)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self):
         result = asdict(self)
         result.pop("source_path", None)
         return result
 
 
-def load_config(config_path: Union[str, Path]) -> ExperimentConfig:
+def load_config(config_path: Union[str, Path]):
     """Load and validate a version-1 YAML experiment configuration."""
     path = Path(config_path).expanduser()
     if not path.is_file():
@@ -452,7 +450,7 @@ def load_config(config_path: Union[str, Path]) -> ExperimentConfig:
     return config
 
 
-def validate_data_files(config: ExperimentConfig) -> List[int]:
+def validate_data_files(config: ExperimentConfig):
     """Validate the OhioT1DM layout and return the resolved patient IDs."""
     root = Path(config.data.root).expanduser()
     patient_ids = config.data.patient_ids()

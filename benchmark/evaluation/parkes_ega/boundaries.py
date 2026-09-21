@@ -11,7 +11,7 @@ import numpy as np
 from typing import Dict, Tuple
 
 
-def get_boundaries_type1(units_mg_dl: bool = True) -> Dict[str, Tuple[np.ndarray, np.ndarray]]:
+def get_boundaries_type1(units_mg_dl: bool = True):
     """
     Get boundary vertices for Parkes Error Grid Analysis (Type 1 diabetes).
     
@@ -73,7 +73,7 @@ def get_boundaries_type1(units_mg_dl: bool = True) -> Dict[str, Tuple[np.ndarray
     return boundaries
 
 
-def get_region_colors() -> Dict[str, str]:
+def get_region_colors():
     """
     Get standard colors for each Parkes EGA region.
     
@@ -91,7 +91,7 @@ def get_region_colors() -> Dict[str, str]:
     }
 
 
-def get_region_descriptions() -> Dict[str, str]:
+def get_region_descriptions():
     """
     Get clinical descriptions for each Parkes EGA region.
     

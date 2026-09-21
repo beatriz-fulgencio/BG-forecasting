@@ -43,7 +43,7 @@ def _clean_glucose(values):
     ]
 
 
-def summarize_clinical_glucose(glucose) -> Dict[str, float]:
+def summarize_clinical_glucose(glucose):
     """Summarize one CGM series using consensus clinical glucose metrics.
 
     Returns NaN for every metric when no valid measurements remain.  CV is
@@ -69,7 +69,7 @@ def summarize_clinical_glucose(glucose) -> Dict[str, float]:
     return summary
 
 
-def compute_clinical_shift(train_glucose, test_glucose) -> Dict[str, float]:
+def compute_clinical_shift(train_glucose, test_glucose):
     """Compare clinical CGM summaries between a patient's train and test data.
 
     Each ``*_train`` and ``*_test`` field gives the corresponding profile
@@ -90,7 +90,7 @@ def compute_clinical_shift(train_glucose, test_glucose) -> Dict[str, float]:
     return result
 
 
-def compute_patient_clinical_shifts(patient_data: Dict) -> pd.DataFrame:
+def compute_patient_clinical_shifts(patient_data: Dict):
     """Compute one clinical train-to-test profile comparison per patient.
 
     ``patient_data`` maps patient IDs to ``{'train': df, 'test': df}`` entries,

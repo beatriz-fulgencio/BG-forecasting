@@ -93,7 +93,7 @@ _LAZY = {
 __all__ = sorted(_LAZY)
 
 
-def __getattr__(name: str) -> Any:
+def __getattr__(name: str):
     """Import an analysis module the first time one of its names is used."""
     module_name = _LAZY.get(name)
     if module_name is None:
@@ -101,5 +101,5 @@ def __getattr__(name: str) -> Any:
     return getattr(import_module(f".{module_name}", __name__), name)
 
 
-def __dir__() -> list:
+def __dir__():
     return sorted(__all__)

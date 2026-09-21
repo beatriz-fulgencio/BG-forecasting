@@ -118,7 +118,7 @@ def _sample_entropy_details(glucose, m: int = 2, r: float = None):
     if starts.size < 2:
         return result
 
-    def _count_matches(template_len: int) -> int:
+    def _count_matches(template_len: int):
         templates = np.array([values[i:i + template_len] for i in starts])
         count = 0
         for i in range(len(templates) - 1):
@@ -140,7 +140,7 @@ def sample_entropy(glucose, m: int = 2, r: float = None):
     return float(_sample_entropy_details(glucose, m=m, r=r)["sample_entropy"])
 
 
-def compute_signal_features(glucose, m: int = 2, r: float = None) -> Dict:
+def compute_signal_features(glucose, m: int = 2, r: float = None):
     """
     Compute the temporal-irregularity feature set for one glucose series.
 
@@ -160,7 +160,7 @@ def compute_signal_features(glucose, m: int = 2, r: float = None) -> Dict:
     }
 
 
-def compute_patient_signal_features(patient_data: Dict) -> pd.DataFrame:
+def compute_patient_signal_features(patient_data: Dict):
     """
     Compute per-patient temporal-irregularity features from the test glucose.
 

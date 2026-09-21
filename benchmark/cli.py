@@ -12,19 +12,19 @@ from .configs.config_manager import (
     SUPPORTED_DATASETS,
     SUPPORTED_METRICS,
     SUPPORTED_MODELS,
-    load_config,
-    validate_data_files,
 )
+from .experiments.runner import exit_code, run_experiment_from_config
 from .experiments.tracking import load_experiment
 
 
-def _build_parser() -> argparse.ArgumentParser:
+def _build_parser():
     parser = argparse.ArgumentParser(
         description="Blood Glucose Forecasting Benchmark",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s run --config benchmark/configs/example_experiment.yaml
+  %(prog)s run --config configs/example_experiment.yaml
+  %(prog)s resume --run-dir results/experiments/experiment_ID/transfer/seed_42
   %(prog)s analyze --experiment-dir results/experiments/experiment_ID
   %(prog)s compare --experiments experiment_1 experiment_2
   %(prog)s list --models
@@ -34,6 +34,14 @@ Examples:
 
     run_parser = subparsers.add_parser("run", help="run one validated experiment config")
     run_parser.add_argument("--config", required=True, help="path to a versioned YAML config")
+
+    resume_parser = subparsers.add_parser(
+        "resume", help="resume missing patients in one interrupted seed run"
+    )
+    resume_parser.add_argument(
+        "--run-dir", required=True,
+        help="existing mode/seed directory containing tracking.json and resolved_config.yaml",
+    )
 
     analyze_parser = subparsers.add_parser("analyze", help="print metrics from one completed run")
     analyze_parser.add_argument("--experiment-dir", required=True, help="experiment directory")
@@ -54,7 +62,7 @@ Examples:
     return parser
 
 
-def _normalize_metrics(metrics: Optional[List[str]]) -> List[str]:
+def _normalize_metrics(metrics: Optional[List[str]]):
     if metrics is None:
         return list(SUPPORTED_METRICS)
     aliases = {"time_in_range": "tir", "clarke": "clarke_ega", "parkes": "parkes_ega"}
@@ -65,7 +73,7 @@ def _normalize_metrics(metrics: Optional[List[str]]) -> List[str]:
     return normalized
 
 
-def _result_key(metric: str) -> str:
+def _result_key(metric: str):
     return {"clarke_ega": "clarke_zones", "parkes_ega": "parkes_zones"}.get(metric, metric)
 
 
@@ -74,7 +82,7 @@ def _result_key(metric: str) -> str:
 TERMINAL_STATUSES = ("completed", "completed_with_failures")
 
 
-def _load_completed(path: str) -> Dict[str, Any]:
+def _load_completed(path: str):
     experiment = load_experiment(path)
     status = experiment.get("status")
     if status not in TERMINAL_STATUSES:
@@ -82,7 +90,7 @@ def _load_completed(path: str) -> Dict[str, Any]:
     return experiment
 
 
-def _with_failures(experiment: Dict[str, Any], analysis: Dict[str, Any]) -> Dict[str, Any]:
+def _with_failures(experiment: Dict[str, Any], analysis: Dict[str, Any]):
     """Carry failed subruns into the analysis so partial results read as partial."""
     failed = experiment.get("final_results", {}).get("failed_runs")
     if failed:
@@ -91,7 +99,15 @@ def _with_failures(experiment: Dict[str, Any], analysis: Dict[str, Any]) -> Dict
     return analysis
 
 
-def _analysis(experiment: Dict[str, Any], metrics: List[str]) -> Dict[str, Any]:
+def _analysis(experiment: Dict[str, Any], metrics: List[str]):
+    config = experiment.get("config", {})
+    preprocessing = config.get("preprocessing", {})
+    horizon_steps = preprocessing.get("prediction_horizon")
+    sampling_rate = preprocessing.get("sampling_rate")
+    horizon_minutes = (
+        horizon_steps * sampling_rate
+        if isinstance(horizon_steps, int) and isinstance(sampling_rate, int) else None
+    )
     aggregates = experiment.get("final_results", {}).get("aggregate", [])
     if aggregates:
         rows: List[Dict[str, Any]] = []
@@ -102,6 +118,8 @@ def _analysis(experiment: Dict[str, Any], metrics: List[str]) -> Dict[str, Any]:
                 "patient_id": aggregate["patient_id"],
                 "seeds": aggregate["seeds"],
             }
+            if horizon_minutes is not None:
+                row["horizon_minutes"] = horizon_minutes
             aggregate_metrics = aggregate["metrics"]
             for metric in metrics:
                 key = _result_key(metric)
@@ -131,6 +149,8 @@ def _analysis(experiment: Dict[str, Any], metrics: List[str]) -> Dict[str, Any]:
             "model": model_key,
             "patient_id": model.get("patient_id"),
         }
+        if horizon_minutes is not None:
+            row["horizon_minutes"] = horizon_minutes
         for metric in metrics:
             key = _result_key(metric)
             if key in evaluation:
@@ -144,36 +164,24 @@ def _analysis(experiment: Dict[str, Any], metrics: List[str]) -> Dict[str, Any]:
     )
 
 
-def _output_path(value: str) -> Path:
+def _output_path(value: str):
     path = Path(value)
     return path if path.suffix.lower() == ".json" else path / "comparison.json"
 
 
-def _run(args: argparse.Namespace) -> int:
-    config = load_config(args.config)
-    patient_ids = validate_data_files(config)
-    requested_device = config.training.device
-    print(f"Config: {config.source_path}")
-    print(f"Experiment: {config.experiment.name}")
-    print(f"Dataset: OhioT1DM {config.data.version}; patients: {patient_ids}")
-    print(f"Model: {config.model.type}; training mode: {config.training.mode}")
-    print(f"Seeds: {config.training.seeds}; device: {requested_device}")
-    print(f"Output root: {config.output.directory}")
-    from .experiments.configured import run_configured_experiment
-
-    experiment = run_configured_experiment(config, patient_ids)
-    for run in experiment["runs"]:
-        print(f"Completed {run['mode']} seed {run['seed']}: {run['experiment_dir']}")
-    for failure in experiment.get("failed_runs", []):
-        print(
-            f"FAILED {failure['mode']} seed {failure['seed']}: {failure['error']}",
-            file=sys.stderr,
-        )
-    print(f"Parent experiment: {experiment['experiment_dir']}")
-    return 1 if experiment.get("failed_runs") else 0
+def _run(args: argparse.Namespace):
+    return exit_code(run_experiment_from_config(args.config))
 
 
-def _analyze(args: argparse.Namespace) -> int:
+def _resume(args: argparse.Namespace):
+    from .experiments.configured import resume_configured_seed_run
+
+    result = resume_configured_seed_run(args.run_dir)
+    print(f"Completed {result['mode']} seed {result['seed']}: {result['experiment_dir']}")
+    return 0
+
+
+def _analyze(args: argparse.Namespace):
     metrics = _normalize_metrics(args.metrics)
     result = _analysis(_load_completed(args.experiment_dir), metrics)
     if result.get("partial"):
@@ -186,7 +194,7 @@ def _analyze(args: argparse.Namespace) -> int:
     return 0
 
 
-def _compare(args: argparse.Namespace) -> int:
+def _compare(args: argparse.Namespace):
     if len(args.experiments) < 2:
         raise ConfigError("compare requires at least two experiment directories")
     analyses = [
@@ -220,11 +228,31 @@ def _compare(args: argparse.Namespace) -> int:
                 ranking_row[optional_key] = row[optional_key]
         mae_ranking.append(ranking_row)
     mae_ranking.sort(key=lambda row: row["mae_mean"])
+    partitioned = {}
+    for row in comparable_mae:
+        key = (row.get("horizon_minutes"), row.get("mode"))
+        partitioned.setdefault(key, []).append(row)
+    mae_ranking_by_horizon_mode = []
+    for (horizon, mode), rows in sorted(
+        partitioned.items(), key=lambda item: (item[0][0] is None, item[0][0] or 0, item[0][1] or "")
+    ):
+        ordered = sorted(rows, key=lambda row: mae_mean(row))
+        for rank, row in enumerate(ordered, start=1):
+            mae_ranking_by_horizon_mode.append({
+                "horizon_minutes": horizon,
+                "mode": mode,
+                "rank": rank,
+                "experiment_id": row["experiment_id"],
+                "model": row["model"],
+                "patient_id": row["patient_id"],
+                "mae_mean": mae_mean(row),
+            })
     comparison = {
         "experiment_count": len(analyses),
         "experiments": analyses,
         "model_results": model_results,
         "mae_ranking": mae_ranking,
+        "mae_ranking_by_horizon_mode": mae_ranking_by_horizon_mode,
     }
     output = _output_path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -233,7 +261,7 @@ def _compare(args: argparse.Namespace) -> int:
     return 0
 
 
-def _list(args: argparse.Namespace) -> int:
+def _list(args: argparse.Namespace):
     show_all = not (args.models or args.datasets or args.metrics)
     if show_all or args.models:
         print("Models: " + ", ".join(SUPPORTED_MODELS))
@@ -244,11 +272,14 @@ def _list(args: argparse.Namespace) -> int:
     return 0
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: Optional[List[str]] = None):
     """Run the CLI and return a process exit code."""
     parser = _build_parser()
     args = parser.parse_args(argv)
-    handlers = {"run": _run, "analyze": _analyze, "compare": _compare, "list": _list}
+    handlers = {
+        "run": _run, "resume": _resume, "analyze": _analyze,
+        "compare": _compare, "list": _list,
+    }
     try:
         return handlers[args.command](args)
     except (ConfigError, FileNotFoundError, RuntimeError, OSError, ValueError) as exc:

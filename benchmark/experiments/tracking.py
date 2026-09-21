@@ -55,13 +55,13 @@ class ExperimentTracker:
             'status': 'initialized'
         }
     
-    def _generate_experiment_id(self) -> str:
+    def _generate_experiment_id(self):
         """Generate unique experiment ID based on timestamp and config."""
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         config_hash = hashlib.md5(str(self.config).encode()).hexdigest()[:8]
         return f"{timestamp}_{config_hash}_{uuid.uuid4().hex[:6]}"
     
-    def _capture_environment(self) -> Dict[str, Any]:
+    def _capture_environment(self):
         """Capture environment information for reproducibility."""
         env_info = {
             'timestamp': datetime.now().isoformat(),
@@ -331,7 +331,7 @@ class ExperimentTracker:
         print(f"  Experiment summary saved: {summary_file}")
     
     @staticmethod
-    def _as_number(value: Any) -> Optional[float]:
+    def _as_number(value: Any):
         """Fit a metric to float, or None when it is not a number."""
         if isinstance(value, bool) or isinstance(value, str) or value is None:
             return None
@@ -342,7 +342,7 @@ class ExperimentTracker:
 
     @classmethod
     def _format_metric(cls, label: str, value: Any, unit: str,
-                       decimals: int = 3) -> str:
+                       decimals: int = 3):
         """Render one scalar metric, or say plainly that it is not there."""
         number = cls._as_number(value)
         if number is None:
@@ -357,7 +357,7 @@ class ExperimentTracker:
     )
 
     @classmethod
-    def _format_range_deltas(cls, deltas: Any) -> list:
+    def _format_range_deltas(cls, deltas: Any):
         """Render the glucose-range occupancy deltas as signed percentage point"""
         if not isinstance(deltas, dict):
             return ["- **Range occupancy (predicted - reference)**: N/A"]
@@ -369,7 +369,7 @@ class ExperimentTracker:
                          else f"  - **{label}**: {number:+.2f} pp")
         return lines
 
-    def get_experiment_info(self) -> Dict[str, Any]:
+    def get_experiment_info(self):
         """Get current experiment information."""
         return {
             'experiment_id': self.experiment_id,
@@ -379,13 +379,13 @@ class ExperimentTracker:
             'config': self.config
         }
 
-    def get_experiment_dir(self) -> Path:
+    def get_experiment_dir(self):
         """Get the experiment directory, creating it if it is not there yet."""
         self._ensure_experiment_dir()
         return self.experiment_dir
 
 
-def load_experiment(experiment_dir: str) -> Dict[str, Any]:
+def load_experiment(experiment_dir: str):
     """
     Load experiment tracking data from directory.
     
@@ -404,7 +404,7 @@ def load_experiment(experiment_dir: str) -> Dict[str, Any]:
         return json.load(f)
 
 
-def compare_experiments(experiment_dirs: list) -> Dict[str, Any]:
+def compare_experiments(experiment_dirs: list):
     """
     Compare multiple experiments.
     

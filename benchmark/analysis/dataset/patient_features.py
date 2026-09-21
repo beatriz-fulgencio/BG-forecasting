@@ -25,7 +25,7 @@ from ..experiments.rapid_change import RAPID_RATE_MG_DL_PER_MIN, rapid_threshold
 GLUCOSE_MIN, GLUCOSE_MAX = GLUCOSE_PLAUSIBLE_RANGE_MG_DL
 
 
-def _valid_glucose_mask(values: np.ndarray) -> np.ndarray:
+def _valid_glucose_mask(values: np.ndarray):
     """Return finite, physiologically plausible target readings."""
     return (np.isfinite(values) & (values >= GLUCOSE_MIN) & (values <= GLUCOSE_MAX))
 
@@ -59,7 +59,7 @@ def _context_dir(results: ExperimentResults):
     return run_dir
 
 
-def compute_patient_features(results: ExperimentResults) -> Dict[int, Dict[str, Any]]:
+def compute_patient_features(results: ExperimentResults):
     """Describe every patient's held-out glucose series.
 
     Args:
@@ -178,7 +178,7 @@ def compute_patient_features(results: ExperimentResults) -> Dict[int, Dict[str, 
     return patient_features
 
 
-def ground_truth_invariance(results: ExperimentResults) -> pd.DataFrame:
+def ground_truth_invariance(results: ExperimentResults):
     """Check the ground truth really is the same under every model in the run.
 
     The features above are called dataset-only because ``y_true`` is the test

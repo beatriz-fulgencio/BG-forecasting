@@ -44,7 +44,7 @@ class OhioBGDataPreprocessor:
         self.glucose_range = (40, 400)  # Valid glucose range in mg/dL 
         self.max_gap_minutes = 15  # Maximum acceptable gap in minutes
     
-    def basic_preprocessing(self, df: pd.DataFrame) -> pd.DataFrame:
+    def basic_preprocessing(self, df: pd.DataFrame):
         """
         Apply basic preprocessing to raw loaded data.
         
@@ -144,7 +144,7 @@ class OhioBGDataPreprocessor:
 
         return df
     
-    def _apply_temporal_events(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _apply_temporal_events(self, df: pd.DataFrame):
         """Apply temporal event durations to the time series."""
         
         print(f"        [TEMPORAL] Starting temporal events processing...")
@@ -202,7 +202,7 @@ class OhioBGDataPreprocessor:
 
         return df
     
-    def _apply_basal_rates(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _apply_basal_rates(self, df: pd.DataFrame):
         """
         Apply basal insulin rates with proper temporal logic.
         
@@ -278,7 +278,7 @@ class OhioBGDataPreprocessor:
         
         return df
     
-    def _check_missing_timesteps(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _check_missing_timesteps(self, df: pd.DataFrame):
         """Check for missing timesteps and flag them."""
         for i in range(1, len(df)):
             gap = (df['index'].iloc[i] - df['index'].iloc[i-1]).total_seconds() / 60.0 # Convert to minutes
@@ -288,13 +288,13 @@ class OhioBGDataPreprocessor:
         return df
 
     def _elapsed_since_last_valid(self, series: pd.Series,
-                                  timestamps: pd.Series) -> pd.Series:
+                                  timestamps: pd.Series):
         """Minutes from each row back to the most recent observed value."""
         observed_at = timestamps.where(series.notna()).ffill()
         return (timestamps - observed_at).dt.total_seconds() / 60.0
 
     def _gap_span_minutes(self, series: pd.Series,
-                          timestamps: pd.Series) -> pd.Series:
+                          timestamps: pd.Series):
         """Total minutes bridged by the gap each row belongs to.
 
         For a row inside a run of missing values this is the distance from the
@@ -311,7 +311,7 @@ class OhioBGDataPreprocessor:
     def handle_missing_data(self,
                            df: pd.DataFrame,
                            strategy: str = 'none',
-                           max_gap: int = None) -> pd.DataFrame:
+                           max_gap: int = None):
         """
         Handle missing data in the time series.
 
@@ -414,7 +414,7 @@ class OhioBGDataPreprocessor:
                 print("    [MISS] WARNING: filled values become prediction targets and were never measured; do not report clinical metrics from this run")
         return df
     
-    def engineer_features(self, df: pd.DataFrame) -> pd.DataFrame:
+    def engineer_features(self, df: pd.DataFrame):
         """
         Engineer additional features for blood glucose forecasting.
         
@@ -450,7 +450,7 @@ class OhioBGDataPreprocessor:
                         df: pd.DataFrame,
                         sequence_length: int = 12,
                         prediction_horizon: int = 6,
-                        step_size: int = 1) -> Tuple[np.ndarray, np.ndarray]:
+                        step_size: int = 1):
         """
         Create sequences for time series forecasting.
         
@@ -503,7 +503,7 @@ class OhioBGDataPreprocessor:
                                df: pd.DataFrame,
                                include_feature_engineering: bool = False,
                                handle_missing: str = 'none'
-                               ) -> pd.DataFrame:
+                               ):
         """
         Complete preprocessing pipeline for a single patient.
         
@@ -537,7 +537,7 @@ class OhioBGDataPreprocessor:
 
 def preprocess_ohiot1dm_data(patient_data: Dict[int, pd.DataFrame],
                             target_column: str = 'glucose',
-                            **preprocessing_kwargs) -> Dict[int, pd.DataFrame]:
+                            **preprocessing_kwargs):
     """
     Preprocess data for multiple patients from OhioT1DM dataset.
     
@@ -573,7 +573,7 @@ def extract_and_save_ohio_data(data_dir: str,
                          modes: List[str] = ['train', 'test'],
                          version: str = '2020',
                          sampling_rate: int = 5,
-                         apply_preprocessing: bool = True) -> None:
+                         apply_preprocessing: bool = True):
     """
     Extract data from XML files and save as CSV files.
     

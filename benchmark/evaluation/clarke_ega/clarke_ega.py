@@ -25,7 +25,24 @@ from typing import Tuple, Dict, List, Optional, Union
 import warnings
 
 
-def get_clarke_zone_colors() -> Dict[str, str]:
+# Where each zone's letter is written on the grid, as (x, y, letter) in mg/dL.
+#
+# Every anchor is a point that ``analyze`` actually classifies into that zone --
+# pinned by ``tests/test_clarke_boundaries.py``, because a letter drawn in the
+# wrong region mislabels the figure while leaving every reported number correct,
+# which is exactly the failure that went unnoticed in the published fig 4. Zones
+# B, C, D and E each occupy two disjoint regions on the grid, so they are
+# labelled twice.
+ZONE_LABEL_ANCHORS: Tuple[Tuple[float, float, str], ...] = (
+    (30, 20, 'A'),
+    (30, 150, 'D'), (380, 120, 'D'),
+    (30, 380, 'E'), (380, 20, 'E'),
+    (150, 380, 'C'), (160, 20, 'C'),
+    (280, 380, 'B'), (380, 260, 'B'),
+)
+
+
+def get_clarke_zone_colors():
     """
     Get standard colors for each Clarke EGA zone.
     
@@ -101,7 +118,74 @@ class ClarkeEGA:
         ax.imshow(color_array, extent=[0, self._max_range, 0, self._max_range], aspect='equal', 
                  origin='lower', interpolation='nearest')
     
-    def _get_zone_polygons(self) -> Dict[str, np.ndarray]:
+    def _boundary_segments(self):
+        """The twelve zone boundaries, as ``(xs, ys)`` pairs.
+
+        Written in terms of :attr:`max_range` and the classifier's own constants
+        rather than literals, so a drawn line cannot drift away from the rule it
+        represents: the upper A edge is ``y = 1.2 x``, the lower A edge
+        ``y = 0.8 x``, and the upper C edge ``y = x + 110`` -- which the rule
+        only applies up to ``x = 290``, so that segment ends at ``(290, 400)``
+        whatever the axis limit. ``tests/test_clarke_boundaries.py`` checks each
+        sloped segment against :meth:`analyze`.
+        """
+        limit = self._max_range
+        return [
+            ([0, 175 / 3], [70, 70]),
+            ([175 / 3, limit / 1.2], [70, limit]),
+            ([70, 70], [84, limit]),
+            ([0, 70], [180, 180]),
+            ([70, 290], [180, limit]),
+            ([70, 70], [0, 56]),
+            ([70, limit], [56, 0.8 * limit]),
+            ([180, 180], [0, 70]),
+            ([180, limit], [70, 70]),
+            ([240, 240], [70, 180]),
+            ([240, limit], [180, 180]),
+            ([130, 180], [0, 70]),
+        ]
+
+    def draw_localized_grid(self, ax, *, alpha: float = 0.10,
+                            label_alpha: float = 0.55,
+                            fontsize: float = 12):
+        """Draw the grid alone, faintly, for a figure that colours its own points.
+
+        The publication form of the error grid: a washed-out zone fill that only
+        hints at the regions, thin boundary lines, and plain zone letters. It
+        draws no points and sets no title, so the caller owns the data layer --
+        which is the difference from :meth:`plot_on_axes`, whose saturated
+        ``alpha=0.5`` fill and boxed labels are meant for a standalone
+        diagnostic plot and overwhelm points laid on top of them.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes
+            Axes to draw on.
+        alpha : float
+            Zone fill transparency. The default is deliberately low so the data
+            dominates; pass a higher value only for a grid shown without points.
+        label_alpha, fontsize : float
+            Styling for the zone letters, which come from
+            :data:`ZONE_LABEL_ANCHORS`.
+        """
+        self._create_zone_background(ax, alpha)
+        limit = self._max_range
+
+        for xs, ys in self._boundary_segments():
+            ax.plot(xs, ys, 'k-', lw=1.1, alpha=0.7, zorder=2)
+        ax.plot([0, limit], [0, limit], 'k:', lw=1, alpha=0.8, zorder=2)
+
+        for x, y, letter in ZONE_LABEL_ANCHORS:
+            ax.text(x, y, letter, fontsize=fontsize, fontweight='bold',
+                    alpha=label_alpha, zorder=2, ha='center', va='center')
+
+        ax.set_xlim(0, limit)
+        ax.set_ylim(0, limit)
+        ax.set_aspect('equal')
+        ax.set_xlabel('Reference glucose (mg/dL)', fontsize=10)
+        ax.set_ylabel('Predicted glucose (mg/dL)', fontsize=10)
+
+    def _get_zone_polygons(self):
         """
         Define zone boundaries as polygons for visualization.
         These polygons precisely match the mathematical zone classification logic.
@@ -131,17 +215,17 @@ class ClarkeEGA:
         self._max_range = 400  # mg/dL
 
     @property
-    def max_range(self) -> float:
+    def max_range(self):
         """Upper bound of the domain ``analyze`` accepts; the grid's published limit."""
         return self._max_range
 
     @property
-    def min_range(self) -> float:
+    def min_range(self):
         """Lower bound of the domain ``analyze`` accepts."""
         return 0.0
 
     def analyze(self, y_true: Union[float, np.ndarray], 
-                y_pred: Union[float, np.ndarray]) -> Dict[str, Union[int, float, np.ndarray]]:
+                y_pred: Union[float, np.ndarray]):
         """
         Perform Clarke Error Grid Analysis.
         
@@ -236,7 +320,7 @@ class ClarkeEGA:
              filename: str = 'Clarke_EGA',
              alpha: float = 0.5,
              color_zones: bool = True,
-             color_points: bool = True) -> plt.Figure:
+             color_points: bool = True):
         """
         Plot Clarke Error Grid with data points.
         
@@ -326,44 +410,18 @@ class ClarkeEGA:
         ax.plot([0, self._max_range], [0, self._max_range], 'k:', linewidth=1, alpha=0.9, 
                label='Perfect agreement')
         
-        # Zone boundaries (converted from MATLAB)
-        ax.plot([0, 175/3], [70, 70], 'k-', linewidth=1.5)
-        ax.plot([175/3, self._max_range/1.2], [70, self._max_range], 'k-', linewidth=1.5)
-        ax.plot([70, 70], [84, self._max_range], 'k-', linewidth=1.5)
-        ax.plot([0, 70], [180, 180], 'k-', linewidth=1.5)
-        # Upper C edge is y_test = y_ref + 110, and the rule only applies up to
-        # y_ref = 290, so this segment ends at (290, 400) whatever the axis limit.
-        ax.plot([70, 290], [180, 400], 'k-', linewidth=1.5)
-        ax.plot([70, 70], [0, 56], 'k-', linewidth=1.5)
-        # Lower A edge is y_test = 0.8 * y_ref, so both endpoints scale together.
-        ax.plot([70, self._max_range], [56, 0.8 * self._max_range], 'k-', linewidth=1.5)
-        ax.plot([180, 180], [0, 70], 'k-', linewidth=1.5)
-        ax.plot([180, self._max_range], [70, 70], 'k-', linewidth=1.5)
-        ax.plot([240, 240], [70, 180], 'k-', linewidth=1.5)
-        ax.plot([240, self._max_range], [180, 180], 'k-', linewidth=1.5)
-        ax.plot([130, 180], [0, 70], 'k-', linewidth=1.5)
+        # Zone boundaries (converted from MATLAB); see _boundary_segments, which
+        # is the one definition both this plot and the publication grid draw.
+        for _xs, _ys in self._boundary_segments():
+            ax.plot(_xs, _ys, 'k-', linewidth=1.5)
         
-        # Zone labels with colored backgrounds
+        # Zone labels with colored backgrounds, placed by the shared anchors so
+        # this plot and the publication grid cannot disagree about where a zone is.
         label_style = dict(boxstyle="round,pad=0.3", alpha=0.9, edgecolor='black', linewidth=1)
-        
-        ax.text(30, 20, 'A', fontsize=14, fontweight='bold', 
-               bbox=dict(**label_style, facecolor=colors['A']))
-        ax.text(30, 150, 'D', fontsize=14, fontweight='bold',
-               bbox=dict(**label_style, facecolor=colors['D']))
-        ax.text(30, 380, 'E', fontsize=14, fontweight='bold',
-               bbox=dict(**label_style, facecolor=colors['E']))
-        ax.text(150, 380, 'C', fontsize=14, fontweight='bold',
-               bbox=dict(**label_style, facecolor=colors['C']))
-        ax.text(160, 20, 'C', fontsize=14, fontweight='bold',
-               bbox=dict(**label_style, facecolor=colors['C']))
-        ax.text(380, 20, 'E', fontsize=14, fontweight='bold',
-               bbox=dict(**label_style, facecolor=colors['E']))
-        ax.text(380, 120, 'D', fontsize=14, fontweight='bold',
-               bbox=dict(**label_style, facecolor=colors['D']))
-        ax.text(380, 260, 'B', fontsize=14, fontweight='bold',
-               bbox=dict(**label_style, facecolor=colors['B']))
-        ax.text(280, 380, 'B', fontsize=14, fontweight='bold',
-               bbox=dict(**label_style, facecolor=colors['B']))
+
+        for x, y, letter in ZONE_LABEL_ANCHORS:
+            ax.text(x, y, letter, fontsize=14, fontweight='bold',
+                    bbox=dict(**label_style, facecolor=colors[letter]))
         
         # Labels
         ax.set_xlabel('Reference Concentration [mg/dl]', fontsize=12)
@@ -395,7 +453,7 @@ class ClarkeEGA:
                     filename: str = 'Clarke_EGA',
                     alpha: float = 0.5,
                     color_zones: bool = True,
-                    color_points: bool = True) -> plt.Axes:
+                    color_points: bool = True):
         """
         Plot Clarke Error Grid on existing axes.
 
@@ -476,44 +534,18 @@ class ClarkeEGA:
         ax.plot([0, self._max_range], [0, self._max_range], 'k:', linewidth=1, alpha=0.9, 
                label='Perfect agreement')
         
-        # Zone boundaries (converted from MATLAB)
-        ax.plot([0, 175/3], [70, 70], 'k-', linewidth=1.5)
-        ax.plot([175/3, self._max_range/1.2], [70, self._max_range], 'k-', linewidth=1.5)
-        ax.plot([70, 70], [84, self._max_range], 'k-', linewidth=1.5)
-        ax.plot([0, 70], [180, 180], 'k-', linewidth=1.5)
-        # Upper C edge is y_test = y_ref + 110, and the rule only applies up to
-        # y_ref = 290, so this segment ends at (290, 400) whatever the axis limit.
-        ax.plot([70, 290], [180, 400], 'k-', linewidth=1.5)
-        ax.plot([70, 70], [0, 56], 'k-', linewidth=1.5)
-        # Lower A edge is y_test = 0.8 * y_ref, so both endpoints scale together.
-        ax.plot([70, self._max_range], [56, 0.8 * self._max_range], 'k-', linewidth=1.5)
-        ax.plot([180, 180], [0, 70], 'k-', linewidth=1.5)
-        ax.plot([180, self._max_range], [70, 70], 'k-', linewidth=1.5)
-        ax.plot([240, 240], [70, 180], 'k-', linewidth=1.5)
-        ax.plot([240, self._max_range], [180, 180], 'k-', linewidth=1.5)
-        ax.plot([130, 180], [0, 70], 'k-', linewidth=1.5)
+        # Zone boundaries (converted from MATLAB); see _boundary_segments, which
+        # is the one definition both this plot and the publication grid draw.
+        for _xs, _ys in self._boundary_segments():
+            ax.plot(_xs, _ys, 'k-', linewidth=1.5)
         
-        # Zone labels with colored backgrounds
+        # Zone labels with colored backgrounds, placed by the shared anchors so
+        # this plot and the publication grid cannot disagree about where a zone is.
         label_style = dict(boxstyle="round,pad=0.3", alpha=0.9, edgecolor='black', linewidth=1)
-        
-        ax.text(30, 20, 'A', fontsize=14, fontweight='bold', 
-               bbox=dict(**label_style, facecolor=colors['A']))
-        ax.text(30, 150, 'D', fontsize=14, fontweight='bold',
-               bbox=dict(**label_style, facecolor=colors['D']))
-        ax.text(30, 380, 'E', fontsize=14, fontweight='bold',
-               bbox=dict(**label_style, facecolor=colors['E']))
-        ax.text(150, 380, 'C', fontsize=14, fontweight='bold',
-               bbox=dict(**label_style, facecolor=colors['C']))
-        ax.text(160, 20, 'C', fontsize=14, fontweight='bold',
-               bbox=dict(**label_style, facecolor=colors['C']))
-        ax.text(380, 20, 'E', fontsize=14, fontweight='bold',
-               bbox=dict(**label_style, facecolor=colors['E']))
-        ax.text(380, 120, 'D', fontsize=14, fontweight='bold',
-               bbox=dict(**label_style, facecolor=colors['D']))
-        ax.text(380, 260, 'B', fontsize=14, fontweight='bold',
-               bbox=dict(**label_style, facecolor=colors['B']))
-        ax.text(280, 380, 'B', fontsize=14, fontweight='bold',
-               bbox=dict(**label_style, facecolor=colors['B']))
+
+        for x, y, letter in ZONE_LABEL_ANCHORS:
+            ax.text(x, y, letter, fontsize=14, fontweight='bold',
+                    bbox=dict(**label_style, facecolor=colors[letter]))
         
         # Labels
         ax.set_xlabel('Reference Concentration [mg/dl]', fontsize=12)
@@ -529,7 +561,7 @@ class ClarkeEGA:
         return ax
 
     def print_summary(self, y_true: Union[float, np.ndarray],
-                     y_pred: Union[float, np.ndarray]) -> None:
+                     y_pred: Union[float, np.ndarray]):
         """
         Print a summary of the Clarke EGA analysis results.
         
@@ -579,7 +611,7 @@ class ClarkeEGA:
 
 # Convenience functions for direct use
 def clarke_analysis(y_true: Union[float, np.ndarray], 
-                   y_pred: Union[float, np.ndarray]) -> Tuple[np.ndarray, np.ndarray]:
+                   y_pred: Union[float, np.ndarray]):
     """
     Perform Clarke Error Grid Analysis.
     
@@ -608,7 +640,7 @@ def clarke_analysis(y_true: Union[float, np.ndarray],
 def plot_clarke_grid(y_true: Union[float, np.ndarray], 
                     y_pred: Union[float, np.ndarray],
                     figsize: Tuple[int, int] = (8, 8),
-                    **kwargs) -> plt.Figure:
+                    **kwargs):
     """
     Plot Clarke Error Grid with data points.
     

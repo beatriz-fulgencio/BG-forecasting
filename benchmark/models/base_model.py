@@ -92,7 +92,7 @@ class BaseBGModel(ABC):
         self._build_model()
     
     @abstractmethod
-    def _build_model(self) -> None:
+    def _build_model(self):
         """
         Build the model architecture.
         
@@ -105,7 +105,7 @@ class BaseBGModel(ABC):
     def fit(self, 
             train_data: Union[DataLoader, np.ndarray, pd.DataFrame],
             validation_data: Optional[Union[DataLoader, np.ndarray, pd.DataFrame]] = None,
-            **kwargs) -> Dict[str, Any]:
+            **kwargs):
         """
         Train the model on the provided data.
         
@@ -122,7 +122,7 @@ class BaseBGModel(ABC):
     @abstractmethod
     def predict(self, 
                 data: Union[DataLoader, np.ndarray, pd.DataFrame],
-                return_uncertainty: bool = False) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
+                return_uncertainty: bool = False):
         """
         Make predictions on new data.
         
@@ -138,7 +138,7 @@ class BaseBGModel(ABC):
     def validate(self, 
                  test_data: Union[DataLoader, np.ndarray, pd.DataFrame],
                  evaluator=None,
-                 metrics: Optional[List[str]] = None) -> Dict[str, float]:
+                 metrics: Optional[List[str]] = None):
         """
         Validate model performance on test data using the evaluation module.
         
@@ -181,7 +181,7 @@ class BaseBGModel(ABC):
             
         return results
 
-    def save_model(self, filepath: Union[str, Path]) -> None:
+    def save_model(self, filepath: Union[str, Path]):
         """
         Save the trained model to disk.
         
@@ -222,7 +222,7 @@ class BaseBGModel(ABC):
                 pickle.dump(model_data, f)
     
     @classmethod
-    def load_model(cls, filepath: Union[str, Path]) -> 'BaseBGModel':
+    def load_model(cls, filepath: Union[str, Path]):
         """
         Load a saved model from disk.
         
@@ -277,11 +277,11 @@ class BaseBGModel(ABC):
             
             return instance
     
-    def get_hyperparameters(self) -> Dict[str, Any]:
+    def get_hyperparameters(self):
         """Get current hyperparameters."""
         return self.hyperparameters.copy()
     
-    def set_hyperparameters(self, **kwargs) -> None:
+    def set_hyperparameters(self, **kwargs):
         """
         Update hyperparameters and rebuild model if necessary.
         
@@ -292,7 +292,7 @@ class BaseBGModel(ABC):
         if self.is_fitted:
             print("Warning: Updating hyperparameters on fitted model. Consider retraining.")
     
-    def _get_device(self, device: Optional[str] = None) -> str:
+    def _get_device(self, device: Optional[str] = None):
         """Get appropriate device for PyTorch models."""
         if not TORCH_AVAILABLE:
             return 'cpu'
@@ -306,7 +306,7 @@ class BaseBGModel(ABC):
             return 'mps'
         return 'cpu'
 
-    def _extract_targets(self, data: Union[DataLoader, np.ndarray, pd.DataFrame]) -> np.ndarray:
+    def _extract_targets(self, data: Union[DataLoader, np.ndarray, pd.DataFrame]):
         """
         Extract target values from various data formats.
         
@@ -339,7 +339,7 @@ class BaseBGModel(ABC):
         else:
             raise ValueError(f"Unsupported data format: {type(data)}")
     
-    def __repr__(self) -> str:
+    def __repr__(self):
         """String representation of the model."""
         status = "fitted" if self.is_fitted else "not fitted"
         return (f"{self.__class__.__name__}(name='{self.model_name}', "
@@ -373,7 +373,7 @@ class BasePyTorchBGModel(BaseBGModel):
             grad_clip_norm: Optional[float] = 1.0,
             lr_scheduler_factor: float = 0.5,
             lr_scheduler_patience: int = 1,
-            **kwargs) -> Dict[str, Any]:
+            **kwargs):
         """
         Train the PyTorch model.
         Args:
@@ -481,7 +481,7 @@ class BasePyTorchBGModel(BaseBGModel):
     
     def predict(self, 
                 data_loader: DataLoader,
-                return_uncertainty: bool = False) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
+                return_uncertainty: bool = False):
         """
         Make predictions using the trained model.
         
@@ -513,7 +513,7 @@ class BasePyTorchBGModel(BaseBGModel):
         
         return predictions
     
-    def _validate_epoch(self, val_loader: DataLoader) -> float:
+    def _validate_epoch(self, val_loader: DataLoader):
         """Validate model for one epoch."""
         self.model.eval()
         val_loss = 0.0

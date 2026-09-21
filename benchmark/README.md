@@ -28,7 +28,7 @@ shown in the repository-level README. There is no no-data quick start.
 
 ### 3. Run Example Experiment
 ```bash
-python -m benchmark.cli run --config benchmark/configs/example_experiment.yaml
+python -m benchmark.cli run --config configs/example_experiment.yaml
 ```
 
 ### 4. View Results
@@ -61,6 +61,7 @@ benchmark/
 - RNN
 - LSTM
 - GRU
+- Transformer encoder (separately tuned 30-minute extension)
 
 ## Supported Datasets
 
@@ -129,7 +130,7 @@ across seeds. Report them alongside any published EGA result.
 
 ### Single Experiment
 ```bash
-python -m benchmark.cli run --config benchmark/configs/my_experiment.yaml
+python -m benchmark.cli run --config configs/my_experiment.yaml
 ```
 
 ## Result Analysis

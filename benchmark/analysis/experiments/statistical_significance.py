@@ -233,7 +233,7 @@ class StatisticalSignificanceTester:
         return "no_difference"
 
     @staticmethod
-    def _paired_effects(differences: np.ndarray) -> Dict[str, float]:
+    def _paired_effects(differences: np.ndarray):
         """Compute paired Cohen's dz and matched-pairs rank-biserial r.
 
         References:
@@ -307,7 +307,7 @@ class StatisticalSignificanceTester:
                          data1: np.ndarray, 
                          data2: np.ndarray,
                          test_type: str = 'auto',
-                         alternative: str = 'two-sided') -> Dict:
+                         alternative: str = 'two-sided'):
         """Compare paired observations with an explicit or automatic test."""
         
         aliases = {"wilcoxon": "non-parametric", "sign-test": "sign"}
@@ -751,7 +751,7 @@ class StatisticalSignificanceTester:
     
     def create_summary_report(self, 
                              results_df: pd.DataFrame,
-                             output_path: Optional[Union[str, Path]] = None) -> str:
+                             output_path: Optional[Union[str, Path]] = None):
         """
         Create a summary report of statistical tests.
         """

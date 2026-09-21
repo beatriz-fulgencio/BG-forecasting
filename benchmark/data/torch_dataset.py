@@ -70,7 +70,7 @@ class OhioDataset(Dataset):
         # Validate no NaN in final data
         self._validate_data()
 
-    def _extract_features(self) -> np.ndarray:
+    def _extract_features(self):
         """Extract feature matrix from DataFrame."""
         feature_data = []
         print(self.df.columns)
@@ -110,11 +110,11 @@ class OhioDataset(Dataset):
     def str2dt(s):
         return datetime.datetime.strptime(s, "%Y-%m-%d %H:%M:%S")
     
-    def timestamp2dt(self, timestamp: int) -> datetime.datetime:
+    def timestamp2dt(self, timestamp: int):
         """Convert timestamp to datetime."""
         return self.str2dt(str(self.df.index[timestamp]))
     
-    def _find_valid_sequences(self) -> List[Tuple[int, int]]:
+    def _find_valid_sequences(self):
         """
         Find all valid sequences without missing values.
         
@@ -127,7 +127,7 @@ class OhioDataset(Dataset):
 
         print(f"    Finding valid sequences in data of min {required_length} length")
 
-        def check_contiguous_valid(start_idx: int) -> List[Tuple[int, int]]:
+        def check_contiguous_valid(start_idx: int):
             """Check how many valid sequences we can extract starting from start_idx."""
             sequences = []
             end_idx = start_idx
@@ -218,7 +218,7 @@ class OhioDataset(Dataset):
         return np.where(np.abs(recovered - nearest) <= tolerance, nearest, recovered)
 
     @property
-    def target_units(self) -> str:
+    def target_units(self):
         """Units of the glucose target returned by ``inverse_transform_target``."""
         return "mg/dL"
 
@@ -229,11 +229,11 @@ class OhioDataset(Dataset):
             if torch.isnan(sequence).any():
                 raise ValueError(f"NaN detected in sequence {i}!")
 
-    def __len__(self) -> int:
+    def __len__(self):
         """Return number of valid sequences."""
         return len(self.valid_sequences)
 
-    def __getitem__(self, idx: int) -> torch.Tensor:
+    def __getitem__(self, idx: int):
         """
         Get a sequence for training.
         
@@ -249,7 +249,7 @@ class OhioDataset(Dataset):
         sequence = self.data[start_idx:end_idx, :]
         return torch.from_numpy(sequence)
 
-    def get_target(self, idx: int) -> torch.Tensor:
+    def get_target(self, idx: int):
         """
         Get the target value(s) for a sequence.
         
@@ -287,21 +287,21 @@ class OhioDataset(Dataset):
                 
             return torch.from_numpy(target_sequence)
 
-    def _raw_glucose_and_timestamps(self) -> Tuple[np.ndarray, pd.DatetimeIndex]:
+    def _raw_glucose_and_timestamps(self):
         """Convert the whole glucose column and index once.
         """
         glucose = pd.to_numeric(self.df["glucose"], errors="coerce").to_numpy(dtype=float)
         timestamps = pd.to_datetime(self.df.index, errors="coerce")
         return glucose, timestamps
 
-    def get_prediction_context(self, idx: int) -> Dict[str, Any]:
+    def get_prediction_context(self, idx: int):
         """Return the raw glucose and timestamps behind one forecast row.
         """
         glucose, timestamps = self._raw_glucose_and_timestamps()
         return self._context_at(idx, glucose, timestamps)
 
     def _context_at(self, idx: int, glucose: np.ndarray,
-                    timestamps: pd.DatetimeIndex) -> Dict[str, Any]:
+                    timestamps: pd.DatetimeIndex):
         """Build one context row from already-converted glucose and timestamps."""
         if idx < 0:
             idx += len(self)
@@ -334,7 +334,7 @@ class OhioDataset(Dataset):
             "true_values": float(glucose[final_target_idx]),
         }
 
-    def prediction_context_frame(self) -> pd.DataFrame:
+    def prediction_context_frame(self):
         """Return one timestamp-aware context row per model prediction.
 
         Glucose-history columns use zero-based chronological positions, so
@@ -362,7 +362,7 @@ def prepare_patient_datasets(train_df: pd.DataFrame,
                            sequence_length: int = 12,
                            prediction_horizon: int = 1,
                            unimodal: bool = False,
-                           feature_columns: Optional[List[str]] = None) -> Tuple[OhioDataset, OhioDataset]:
+                           feature_columns: Optional[List[str]] = None):
     """
     Prepare train and test datasets for a single patient.
     
@@ -403,7 +403,7 @@ def prepare_patient_datasets(train_df: pd.DataFrame,
 def prepare_personal_data(patient_data: dict,
                                        sequence_length: int = 12,
                                        prediction_horizon: int = 1,
-                                       unimodal: bool = False) -> Tuple[OhioDataset, OhioDataset]:
+                                       unimodal: bool = False):
     """
     Prepare datasets from CSV files.
     
@@ -429,7 +429,7 @@ def prepare_multi_patient_dataset(patient_data: dict,
                                  sequence_length: int = 12,
                                  prediction_horizon: int = 6,
                                  target_patient_id: Optional[int] = None,
-                                 unimodal: bool = False) -> Union[ConcatDataset, Tuple[ConcatDataset, OhioDataset, OhioDataset]]:
+                                 unimodal: bool = False):
     """
     Prepare dataset combining multiple patients for transfer learning.
     

@@ -1,7 +1,5 @@
 """Reliable execution path for versioned experiment configurations."""
 
-from __future__ import annotations
-
 import json
 import math
 import random
@@ -16,6 +14,7 @@ from scipy.stats import t as student_t
 from torch.utils.data import DataLoader
 
 from ..configs.config_manager import ExperimentConfig
+from ..glucose_ranges import CGM_SENSOR_RANGE_MG_DL, GLUCOSE_PLAUSIBLE_RANGE_MG_DL
 from ..data.loaders import load_ohiot1dm_data
 from ..data.preprocessors import preprocess_ohiot1dm_data
 from ..data.torch_dataset import prepare_multi_patient_dataset, prepare_personal_data
@@ -32,17 +31,6 @@ MODEL_REGISTRY = {
     "transformer": TransformerBGModel,
 }
 
-# Broad measurement plausibility bounds in the units used by the clinical
-# metrics. These are deliberately wider than the usual treatment range.
-GLUCOSE_PLAUSIBLE_RANGE_MG_DL = (20.0, 600.0)
-
-# The OhioT1DM CGM reports only within this interval and saturates at both ends,
-# so every target is already censored to it. Predictions are NOT clipped to it:
-# every metric is computed from the raw prediction vector, and the error grids
-# exclude and report whatever falls outside their own domain. This range is kept
-# only to count how far outside the measurement range a model's output strayed,
-# which is how a model that needs constraining makes itself known.
-CGM_SENSOR_RANGE_MG_DL = (40.0, 400.0)
 
 
 class _ForecastingDataset:
@@ -76,7 +64,7 @@ class _ConcatForecastingDataset:
         raise IndexError(index)
 
 
-def _seed_everything(seed: int) -> None:
+def _seed_everything(seed: int):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -84,13 +72,13 @@ def _seed_everything(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
-def _torch_generator(seed: int) -> torch.Generator:
+def _torch_generator(seed: int):
     generator = torch.Generator()
     generator.manual_seed(seed)
     return generator
 
 
-def _resolve_device(requested: str) -> str:
+def _resolve_device(requested: str):
     if requested == "auto":
         if torch.cuda.is_available():
             return "cuda"
@@ -106,7 +94,7 @@ def _resolve_device(requested: str) -> str:
     return requested
 
 
-def _load_patient_frames(config: ExperimentConfig, patient_ids: Iterable[int]) -> Dict[int, Dict[str, pd.DataFrame]]:
+def _load_patient_frames(config: ExperimentConfig, patient_ids: Iterable[int]):
     frames: Dict[int, Dict[str, pd.DataFrame]] = {}
     for patient_id in patient_ids:
         patient_version = config.data.version_for_patient(patient_id)
@@ -211,13 +199,13 @@ def _make_loaders(
     return global_loader, train_loader, validation_loader, test_loader, train_dataset, test_dataset
 
 
-def _last_horizon(values: np.ndarray) -> np.ndarray:
+def _last_horizon(values: np.ndarray):
     if values.ndim == 1:
         return values
     return values[:, -1]
 
 
-def _targets(loader: DataLoader) -> np.ndarray:
+def _targets(loader: DataLoader):
     batches = [target.numpy() for _, target in loader]
     if not batches:
         raise RuntimeError("The test dataset contains no valid sequences")
@@ -226,7 +214,7 @@ def _targets(loader: DataLoader) -> np.ndarray:
 
 def _prediction_export_frame(
     test_dataset, y_true: np.ndarray, y_pred: np.ndarray
-) -> pd.DataFrame:
+):
     """Build the stable, timestamp-aware prediction CSV schema."""
     y_true = np.asarray(y_true, dtype=float)
     y_pred = np.asarray(y_pred, dtype=float)
@@ -257,7 +245,7 @@ def _prediction_export_frame(
     return pd.concat([frame, context.reset_index(drop=True)], axis=1)
 
 
-def _validate_evaluation_arrays(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
+def _validate_evaluation_arrays(y_true: np.ndarray, y_pred: np.ndarray):
     """Check evaluation arrays and report on implausible predictions.
     """
     if y_true.shape != y_pred.shape:
@@ -307,7 +295,7 @@ def _validate_evaluation_arrays(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[
     }
 
 
-def _serializable(value: Any) -> Any:
+def _serializable(value: Any):
     if isinstance(value, dict):
         return {str(key): _serializable(item) for key, item in value.items()}
     if isinstance(value, list):
@@ -319,7 +307,7 @@ def _serializable(value: Any) -> Any:
     return value
 
 
-def _metric_rows(results: Dict[int, Dict[str, Any]], model_name: str) -> List[Dict[str, Any]]:
+def _metric_rows(results: Dict[int, Dict[str, Any]], model_name: str):
     rows: List[Dict[str, Any]] = []
     excluded = {"model_info", "training_history", "artifacts"}
     for patient_id, patient_result in results.items():
@@ -345,7 +333,7 @@ def _save_plots(
     test_loader: DataLoader,
     test_dataset,
     config: ExperimentConfig,
-) -> Dict[str, str]:
+):
     if not config.output.generate_plots:
         return {}
     # Plotting is optional and relatively expensive to import, so keep it off
@@ -408,7 +396,7 @@ def _save_plots(
     return artifacts
 
 
-def _flatten_numeric(prefix: str, value: Any, output: Dict[str, float]) -> None:
+def _flatten_numeric(prefix: str, value: Any, output: Dict[str, float]):
     if isinstance(value, dict):
         for name, nested in value.items():
             nested_prefix = f"{prefix}.{name}" if prefix else name
@@ -417,7 +405,7 @@ def _flatten_numeric(prefix: str, value: Any, output: Dict[str, float]) -> None:
         output[prefix] = float(value)
 
 
-def _summarize_across_seeds(values: List[float]) -> Dict[str, Any]:
+def _summarize_across_seeds(values: List[float]):
     """Summarize one metric over the seeds that produced it.
 
     A single seed has no spread to report, so the dispersion fields are null
@@ -451,7 +439,7 @@ def _summarize_across_seeds(values: List[float]) -> Dict[str, Any]:
 
 def _aggregate_runs(
     runs: List[Dict[str, Any]], config: ExperimentConfig
-) -> List[Dict[str, Any]]:
+):
     result_keys = {
         {"clarke_ega": "clarke_zones", "parkes_ega": "parkes_zones"}.get(metric, metric)
         for metric in config.evaluation.metrics
@@ -490,7 +478,7 @@ def _aggregate_runs(
     return aggregates
 
 
-def _aggregate_rows(aggregates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _aggregate_rows(aggregates: List[Dict[str, Any]]):
     rows: List[Dict[str, Any]] = []
     for aggregate in aggregates:
         for metric, summary in aggregate["metrics"].items():
@@ -512,7 +500,8 @@ def _run_mode(
     patient_ids: List[int],
     frames: Dict[int, Dict[str, pd.DataFrame]],
     experiment_dir: Path,
-) -> Dict[str, Any]:
+    resume: bool = False,
+):
     _seed_everything(seed)
     resolved = config.to_dict()
     resolved["training"]["mode"] = mode
@@ -520,7 +509,29 @@ def _run_mode(
     tracker = ExperimentTracker(
         experiment_dir.parent, config=resolved, experiment_dir=experiment_dir
     )
-    tracker.start_experiment()
+    tracking_path = experiment_dir / "tracking.json"
+    if resume:
+        if not tracking_path.is_file():
+            raise FileNotFoundError(f"No interrupted tracking file exists at {tracking_path}")
+        saved = json.loads(tracking_path.read_text(encoding="utf-8"))
+        if saved.get("status") == "completed":
+            raise RuntimeError(f"Seed run {experiment_dir} is already completed")
+        tracker.tracking_data = saved
+        tracker.tracking_data["status"] = "running"
+        tracker.tracking_data.pop("end_time", None)
+        tracker.tracking_data.pop("duration_seconds", None)
+        tracker.tracking_data.setdefault("resumes", []).append({
+            "timestamp": pd.Timestamp.now().isoformat(),
+            "completed_patients": sorted(
+                int(item["patient_id"])
+                for item in tracker.tracking_data.get("models", {}).values()
+                if item.get("evaluation_results") and item.get("patient_id") is not None
+            ),
+        })
+        tracker._save_tracking_data()
+        print(f"[INFO] Resuming {mode} seed {seed} in {experiment_dir}")
+    else:
+        tracker.start_experiment()
     tracker.log_data_params({
         "dataset": config.data.dataset,
         "patient_ids": patient_ids,
@@ -544,9 +555,16 @@ def _run_mode(
         evaluator = BGEvaluator()
         model_class = MODEL_REGISTRY[config.model.type]
         model_name = config.model.type.upper()
-        results: Dict[int, Dict[str, Any]] = {}
+        results: Dict[int, Dict[str, Any]] = {
+            int(model["patient_id"]): model["evaluation_results"]
+            for model in tracker.tracking_data.get("models", {}).values()
+            if model.get("evaluation_results") and model.get("patient_id") is not None
+        }
 
         for patient_id in patient_ids:
+            if patient_id in results:
+                print(f"  [INFO] Skipping completed patient {patient_id}")
+                continue
             loaders = _make_loaders(config, mode, seed, patient_id, frames)
             global_loader, train_loader, validation_loader, test_loader, train_dataset, test_dataset = loaders
             model = model_class(
@@ -684,7 +702,46 @@ def _run_mode(
         raise
 
 
-def run_configured_experiment(config: ExperimentConfig, patient_ids: List[int]) -> Dict[str, Any]:
+def resume_configured_seed_run(experiment_dir: str):
+    """Finish the missing patients in one interrupted, configured seed run.
+
+    The seed directory's resolved configuration is authoritative. Completed
+    patient results are retained from ``tracking.json``; only records without
+    evaluated results are trained again.
+    """
+    run_dir = Path(experiment_dir)
+    config_path = run_dir / "resolved_config.yaml"
+    tracking_path = run_dir / "tracking.json"
+    if not config_path.is_file() or not tracking_path.is_file():
+        raise FileNotFoundError(
+            "A resumable seed directory must contain resolved_config.yaml and tracking.json"
+        )
+
+    from ..configs.config_manager import load_config, validate_data_files
+
+    config = load_config(str(config_path))
+    if config.training.mode not in ("regular", "transfer") or len(config.training.seeds) != 1:
+        raise RuntimeError(
+            "resolved_config.yaml must describe exactly one regular or transfer seed run"
+        )
+    tracking = json.loads(tracking_path.read_text(encoding="utf-8"))
+    if tracking.get("status") == "completed":
+        raise RuntimeError(f"Seed run {run_dir} is already completed")
+
+    patient_ids = validate_data_files(config)
+    frames = _load_patient_frames(config, patient_ids)
+    return _run_mode(
+        config,
+        config.training.mode,
+        config.training.seeds[0],
+        patient_ids,
+        frames,
+        run_dir,
+        resume=True,
+    )
+
+
+def run_configured_experiment(config: ExperimentConfig, patient_ids: List[int]):
     """Run all configured mode/seed combinations and aggregate their metrics."""
     print(f"Resolved device: {_resolve_device(config.training.device)}")
     modes = ["regular", "transfer"] if config.training.mode == "both" else [config.training.mode]

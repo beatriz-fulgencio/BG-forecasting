@@ -1,8 +1,6 @@
 """Entry point for running one versioned experiment configuration.
 """
 
-from __future__ import annotations
-
 import argparse
 import sys
 from typing import Any, Dict, List, Optional
@@ -15,7 +13,7 @@ from ..configs.config_manager import (
 )
 
 
-def run_experiment(config: ExperimentConfig, patient_ids: List[int]) -> Dict[str, Any]:
+def run_experiment(config: ExperimentConfig, patient_ids: List[int]):
     """Run every configured mode/seed combination and report on each one.
 
     Args:
@@ -37,7 +35,7 @@ def run_experiment(config: ExperimentConfig, patient_ids: List[int]) -> Dict[str
     return experiment
 
 
-def run_experiment_from_config(config_path: str = None, **kwargs) -> Dict[str, Any]:
+def run_experiment_from_config(config_path: str = None, **kwargs):
     """Load and validate a YAML configuration, then run it.
 
     Args:
@@ -57,7 +55,7 @@ def run_experiment_from_config(config_path: str = None, **kwargs) -> Dict[str, A
     return run_experiment(config, validate_data_files(config))
 
 
-def exit_code(experiment: Dict[str, Any]) -> int:
+def exit_code(experiment: Dict[str, Any]):
     """0 when every mode/seed finished, 1 when any of them failed.
 
     A partly failed run still writes results for the seeds that finished, so it
@@ -67,7 +65,7 @@ def exit_code(experiment: Dict[str, Any]) -> int:
     return 1 if experiment.get("failed_runs") else 0
 
 
-def _report_plan(config: ExperimentConfig, patient_ids: List[int]) -> None:
+def _report_plan(config: ExperimentConfig, patient_ids: List[int]):
     """Say what is about to run, before anything slow starts."""
     print(f"Config: {config.source_path}")
     print(f"Experiment: {config.experiment.name}")
@@ -77,7 +75,7 @@ def _report_plan(config: ExperimentConfig, patient_ids: List[int]) -> None:
     print(f"Output root: {config.output.directory}")
 
 
-def _report_outcome(experiment: Dict[str, Any]) -> None:
+def _report_outcome(experiment: Dict[str, Any]):
     """Name every run directory, so the next command has something to read."""
     for run in experiment["runs"]:
         print(f"Completed {run['mode']} seed {run['seed']}: {run['experiment_dir']}")
@@ -89,7 +87,7 @@ def _report_outcome(experiment: Dict[str, Any]) -> None:
     print(f"Parent experiment: {experiment['experiment_dir']}")
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: Optional[List[str]] = None):
     """Run one experiment and return a process exit code."""
     parser = argparse.ArgumentParser(description="Run one benchmark experiment")
     parser.add_argument("--config", required=True, help="path to a versioned YAML config")

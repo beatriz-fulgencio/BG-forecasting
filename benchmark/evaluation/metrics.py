@@ -48,7 +48,7 @@ class MissingDataWarning(UserWarning):
     """Raised when a metric silently drops missing values from its average."""
 
 
-def _report_missing(metric: str, missing: int, total: int) -> None:
+def _report_missing(metric: str, missing: int, total: int):
     if missing:
         warnings.warn(
             f"{metric}: {missing} of {total} values were missing and excluded "
@@ -59,7 +59,7 @@ def _report_missing(metric: str, missing: int, total: int) -> None:
         )
 
 
-def _missing_pairs(y_true: np.ndarray, y_pred: np.ndarray) -> Tuple[int, int]:
+def _missing_pairs(y_true: np.ndarray, y_pred: np.ndarray):
     """Count positions where either array is missing, and the total."""
     pairwise = np.isnan(np.asarray(y_true, dtype=float)) | \
         np.isnan(np.asarray(y_pred, dtype=float))
@@ -77,11 +77,11 @@ A sensor reading pinned at the measurement ceiling returns from the inverse
 transform a fraction of a mg/dL above it -- 400.0000092345508 for a true 400 --
 and that is a round-trip artefact, not an out-of-domain value. It is snapped
 onto the bound rather than excluded, which is what a prediction of 700 gets.
-Same value and same reasoning as ``RUN/run_zone_d_analysis.py``.
+Same value and same reasoning as ``RUN/experiments/run_zone_d_analysis.py``.
 """
 
 
-def _snap_into_domain(values: np.ndarray, low: float, high: float) -> np.ndarray:
+def _snap_into_domain(values: np.ndarray, low: float, high: float):
     """Pull values sitting a rounding error outside ``[low, high]`` onto the bound."""
     snapped = np.array(values, dtype=float, copy=True)
     below = (snapped < low) & (snapped >= low - GRID_DOMAIN_ROUNDING_TOLERANCE)
@@ -92,7 +92,7 @@ def _snap_into_domain(values: np.ndarray, low: float, high: float) -> np.ndarray
 
 
 def _grid_inputs(y_true: np.ndarray, y_pred: np.ndarray, low: float, high: float
-                 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+                 ):
     """
     Prepare a pair of arrays for an error grid defined on ``[low, high]``.
 
@@ -111,7 +111,7 @@ def _grid_inputs(y_true: np.ndarray, y_pred: np.ndarray, low: float, high: float
     return reference, prediction, inside
 
 
-def _clarke_domain() -> Tuple[float, float]:
+def _clarke_domain():
     """The domain ``ClarkeEGA.analyze`` accepts, read from the grid itself."""
     if CLARKE_EGA_AVAILABLE:
         ega = ClarkeEGA()
@@ -120,7 +120,7 @@ def _clarke_domain() -> Tuple[float, float]:
 
 
 def clarke_grid_series(y_true: np.ndarray, y_pred: np.ndarray
-                       ) -> Tuple[np.ndarray, np.ndarray, int]:
+                       ):
     """
     Restrict a pair of arrays to the Clarke grid's domain for plotting.
 
@@ -137,7 +137,7 @@ def clarke_grid_series(y_true: np.ndarray, y_pred: np.ndarray
 
 
 def _report_outside_domain(metric: str, outside: int, total: int,
-                           low: float, high: float) -> None:
+                           low: float, high: float):
     """
     Warn that pairs outside a grid's domain were excluded from its percentages.
 
@@ -165,7 +165,7 @@ class BGMetrics:
     """
     
     @staticmethod
-    def mae(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    def mae(y_true: np.ndarray, y_pred: np.ndarray):
         """
         Mean Absolute Error.
         
@@ -180,7 +180,7 @@ class BGMetrics:
         return np.nanmean(np.abs(y_true - y_pred)) # Mean Absolute Error = (1/n) * Σ|y_true - y_pred|
     
     @staticmethod
-    def rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    def rmse(y_true: np.ndarray, y_pred: np.ndarray):
         """
         Root Mean Square Error.
         
@@ -195,7 +195,7 @@ class BGMetrics:
         return np.sqrt(np.nanmean((y_true - y_pred) ** 2)) # Root Mean Squared Error = sqrt((1/n) * Σ(y_true - y_pred)^2)
     
     @staticmethod
-    def mape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    def mape(y_true: np.ndarray, y_pred: np.ndarray):
         """
         Mean Absolute Percentage Error.
         
@@ -215,7 +215,7 @@ class BGMetrics:
         return np.nanmean(np.abs((y_true[mask] - y_pred[mask]) / y_true[mask])) * 100 # Mean Absolute Percentage Error = (1/n) * Σ(|y_true - y_pred| / y_true) * 100
     
     @staticmethod
-    def mard(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    def mard(y_true: np.ndarray, y_pred: np.ndarray):
         """
         Mean Absolute Relative Difference - standard in CGM literature.
         
@@ -251,7 +251,7 @@ class BGMetrics:
     @staticmethod
     def time_in_range(glucose_values: np.ndarray, 
                      lower_bound: float = 70, 
-                     upper_bound: float = 180) -> float:
+                     upper_bound: float = 180):
         """
         Time in Range (TIR) -> percentage of readings within target range.
         
@@ -276,7 +276,7 @@ class BGMetrics:
         return np.mean(in_range) * 100
     
     @staticmethod
-    def time_below_range(glucose_values: np.ndarray, threshold: float = 70) -> float:
+    def time_below_range(glucose_values: np.ndarray, threshold: float = 70):
         """
         Time Below Range (TBR) - percentage of readings below threshold.
         
@@ -300,7 +300,7 @@ class BGMetrics:
         return np.mean(below_range) * 100
     
     @staticmethod
-    def time_above_range(glucose_values: np.ndarray, threshold: float = 180) -> float:
+    def time_above_range(glucose_values: np.ndarray, threshold: float = 180):
         """
         Time Above Range (TAR) - percentage of readings above threshold.
         
@@ -324,7 +324,7 @@ class BGMetrics:
         return np.mean(above_range) * 100
     
     @staticmethod
-    def comparing_time_in_range(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
+    def comparing_time_in_range(y_true: np.ndarray, y_pred: np.ndarray):
         """
         Compare glucose-range occupancy between predictions and reference.
 
@@ -350,7 +350,7 @@ class BGMetrics:
     
     @staticmethod
     def clarke_error_grid_analysis(y_true: np.ndarray, 
-                                  y_pred: np.ndarray) -> Dict[str, float]:
+                                  y_pred: np.ndarray):
         """
         Clarke Error Grid Analysis for glucose prediction evaluation.
         
@@ -400,7 +400,7 @@ class BGMetrics:
 
     @staticmethod
     def parkes_error_grid_analysis(y_true: np.ndarray, 
-                                  y_pred: np.ndarray) -> Dict[str, float]:
+                                  y_pred: np.ndarray):
         """
         Parkes Error Grid Analysis for Type 1 diabetes patients.
         
@@ -456,7 +456,7 @@ class BGMetrics:
     @staticmethod
     def calculate_comprehensive_metrics(y_true: np.ndarray,
                                       y_pred: np.ndarray
-                                      ) -> Dict[str, Union[float, Dict[str, float]]]:
+                                      ):
         """
         Calculate all available metrics for blood glucose prediction evaluation.
         

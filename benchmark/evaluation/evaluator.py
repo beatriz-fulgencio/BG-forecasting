@@ -29,7 +29,7 @@ class BGEvaluator:
                        y_pred: np.ndarray,
                        uncertainty: Optional[np.ndarray] = None,
                        metrics: Optional[List[str]] = None,
-                       units: str = "mg/dL") -> Dict[str, Union[float, Dict]]:
+                       units: str = "mg/dL"):
         """
         Compute specified metrics for glucose prediction evaluation.
         
@@ -85,7 +85,7 @@ class BGEvaluator:
 # direct use
 def evaluate_bg_prediction(y_true: np.ndarray, 
                           y_pred: np.ndarray,
-                          metrics: Optional[List[str]] = None) -> Dict[str, Union[float, Dict]]:
+                          metrics: Optional[List[str]] = None):
     """
     Convenience function for evaluating blood glucose predictions.
     

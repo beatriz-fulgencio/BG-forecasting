@@ -56,19 +56,12 @@ SPEARMAN_FAMILIES = {
 }
 
 
-def kendalls_w(rank_matrix: np.ndarray) -> float:
+def kendalls_w(rank_matrix: np.ndarray):
     """Tie-corrected Kendall coefficient of concordance for patient ranks.
-
-    ``rank_matrix`` is patients (rows) by raters/conditions (columns), and **each
-    column must be a ranking of all the rows** --- a permutation of ``1..n``, up
-    to ties. Columns carrying a gapped subset of some larger ranking inflate the
-    numerator without inflating the denominator and drive the result above 1, so
-    callers restricting to a shared cohort must re-rank first; see
-    :func:`common_cohort_ranks`.
     """
     # Reference: Kendall, M. G. & Babington Smith, B. (1939), "The Problem of
     # m Rankings", Annals of Mathematical Statistics 10(3), 275-287, equations
-    # for W and its tie correction. Transcribed, not copied; SciPy ships no W.
+    # for W and its tie correction. Transcribed; SciPy ships no W.
     #
     #              12 S                                    _
     #   W = --------------------- ,   S = sum_i (R_i - R)^2
@@ -78,9 +71,7 @@ def kendalls_w(rank_matrix: np.ndarray) -> float:
     #   T   = sum over raters j of sum_k (t_jk^3 - t_jk), t_jk the sizes of
     #         rater j's groups of tied ranks
     #
-    # Conformance: tests/test_reference_conformance.py pins this against
-    # scipy.stats.friedmanchisquare (chi2_F = m (n - 1) W) and against
-    # scipy.stats.spearmanr (W = ((m - 1) rho_bar + 1) / m for untied ranks).
+    
     ranks = np.asarray(rank_matrix, dtype=float)
     if ranks.ndim != 2 or min(ranks.shape) < 2 or not np.all(np.isfinite(ranks)):
         return np.nan
@@ -95,20 +86,9 @@ def kendalls_w(rank_matrix: np.ndarray) -> float:
     return 12 * s / denominator if denominator > 0 else np.nan
 
 
-def common_cohort_ranks(pivot: pd.DataFrame) -> np.ndarray:
+def common_cohort_ranks(pivot: pd.DataFrame):
     """Ranks over the patients every condition covers, re-ranked within column.
-
-    ``dropna`` alone keeps a patient only when every condition ranked it, but the
-    survivors keep their original rank values, so each dropped patient leaves a
-    gap: a column reads ``{1, 3, 5}`` where :func:`kendalls_w` requires
-    ``{1, 2, 3}``. Gapped columns break the coefficient's range --- perfectly
-    concordant conditions returned ``W = 4`` --- so the retained rows are ranked
-    again here, making W the concordance over the shared cohort.
     """
-    # Implementation reference: scipy.stats.rankdata with method="average"
-    # (SciPy, BSD-3-Clause) -- the same midrank convention Kendall's tie term
-    # above assumes, and the one scipy.stats.friedmanchisquare applies within
-    # blocks, which is why the two agree only once this has run.
     common = pivot.dropna()
     if common.empty:
         return np.empty((0, pivot.shape[1]), dtype=float)
@@ -118,20 +98,17 @@ def common_cohort_ranks(pivot: pd.DataFrame) -> np.ndarray:
     ])
 
 
-def _spearman(pivot: pd.DataFrame, first: Any, second: Any) -> Tuple[float, float, int]:
+def _spearman(pivot: pd.DataFrame, first: Any, second: Any):
     """Spearman rho and p-value over the patients both conditions rank."""
     paired = pivot[[first, second]].dropna()
     if len(paired) < 3:
         return np.nan, np.nan, len(paired)
-    # Implementation reference: scipy.stats.spearmanr (SciPy, BSD-3-Clause),
-    # which is Pearson's r on midranks with a t-distribution p-value for
-    # H0: rho = 0. Pinned against scipy.stats.pearsonr of scipy.stats.rankdata
-    # in tests/test_reference_conformance.py.
+   
     result = spearmanr(paired[first].to_numpy(), paired[second].to_numpy())
     return float(result.statistic), float(result.pvalue), len(paired)
 
 
-def _adjust_family(frame: pd.DataFrame, family: str) -> pd.DataFrame:
+def _adjust_family(frame: pd.DataFrame, family: str):
     """Benjamini-Hochberg adjust one declared family of Spearman p-values."""
     if frame.empty:
         for column in ("spearman_p_value_bh", "spearman_significant_bh"):
@@ -139,11 +116,6 @@ def _adjust_family(frame: pd.DataFrame, family: str) -> pd.DataFrame:
         frame["family"] = pd.Series(dtype="object")
         frame["family_size"] = pd.Series(dtype="int64")
         return frame
-    # Implementation reference: statsmodels.stats.multitest.multipletests with
-    # method="fdr_bh" (statsmodels, BSD-3-Clause), reached through the shared
-    # tester so every family in this project is adjusted by one code path.
-    # Policy reference: CORRELATION_MULTIPLE_COMPARISON.md -- families are
-    # declared before results are inspected and are never pooled after the fact.
     tester = StatisticalSignificanceTester()
     frame = frame.copy()
     frame["spearman_p_value_bh"] = tester.benjamini_hochberg_correction(
@@ -155,7 +127,7 @@ def _adjust_family(frame: pd.DataFrame, family: str) -> pd.DataFrame:
     return frame
 
 
-def load_patient_stability(parents: Sequence[Path]) -> pd.DataFrame:
+def load_patient_stability(parents: Sequence[Path]):
     """Load one MAE row per patient x model x horizon x mode x seed."""
     if not parents:
         raise ValueError("At least one configured parent experiment is required")
@@ -194,18 +166,14 @@ def load_patient_stability(parents: Sequence[Path]) -> pd.DataFrame:
     return frame.sort_values(["model", "horizon_minutes", "mode", "training_seed", "patient_id"]).reset_index(drop=True)
 
 
-def summarize_patient_stability(seed_table: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def summarize_patient_stability(seed_table: pd.DataFrame):
     """Return cross-seed patient means, Spearman pairs, W, and difficulty spreads."""
     if seed_table.empty:
         raise ValueError("Cannot summarise an empty patient-stability table")
     group = ["patient_id", "model", "horizon_minutes", "horizon_steps", "sampling_rate_minutes", "mode"]
     patient = seed_table.groupby(group, as_index=False).agg(mae_mg_dl=("mae_mg_dl", "mean"),
-        # pandas Series.std defaults to ddof=1: the sample SD over the seeds
-        # actually trained, matching this project's sample-statistics convention.
         mae_seed_sd_mg_dl=("mae_mg_dl", "std"), n_seeds=("training_seed", "nunique"))
-    # Ranked again on the cross-seed mean, within condition, so each column
-    # handed to kendalls_w below is a full ranking of the cohort (scipy.stats
-    # .rankdata, BSD-3-Clause).
+
     patient["patient_rank"] = patient.groupby(["model", "horizon_minutes", "mode"])["mae_mg_dl"].transform(
         lambda values: rankdata(values, method="average")
     )
@@ -250,7 +218,7 @@ def summarize_patient_stability(seed_table: pd.DataFrame) -> Tuple[pd.DataFrame,
             pd.DataFrame(concordance_rows), pd.DataFrame(spread_rows))
 
 
-def seed_rank_sensitivity(seed_table: pd.DataFrame) -> pd.DataFrame:
+def seed_rank_sensitivity(seed_table: pd.DataFrame):
     """Pairwise Spearman stability of patient ranks across training seeds."""
     rows = []
     for (model, horizon, mode), frame in seed_table.groupby(["model", "horizon_minutes", "mode"], sort=True):
@@ -263,7 +231,7 @@ def seed_rank_sensitivity(seed_table: pd.DataFrame) -> pd.DataFrame:
     return _adjust_family(pd.DataFrame(rows), "seed_rank_sensitivity")
 
 
-def plot_hard_easy_spread(spread: pd.DataFrame, output_path: Path) -> None:
+def plot_hard_easy_spread(spread: pd.DataFrame, output_path: Path):
     """Plot descriptive hard/easy MAE spreads with Matplotlib (PSF-based)."""
     import matplotlib.pyplot as plt
 

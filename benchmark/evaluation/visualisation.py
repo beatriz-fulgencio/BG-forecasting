@@ -58,7 +58,7 @@ def plot_temporal_prediction(y_true: np.ndarray,
                             num_examples: int = 4,
                             title: str = "Temporal Glucose Prediction",
                             figsize: Tuple[int, int] = (16, 10),
-                            save_path: Optional[str] = None) -> Optional[Figure]:
+                            save_path: Optional[str] = None):
     """
     Plot predictions showing the temporal relationship between history and future.
     
@@ -186,7 +186,7 @@ def plot_predictions(y_true: np.ndarray,
                      title: str = "Glucose Prediction",
                      figsize: Tuple[int, int] = (10, 6),
                      save_path: Optional[str] = None,
-                     sample_interval_minutes: int = 5) -> Optional[Figure]:
+                     sample_interval_minutes: int = 5):
     """
     Plot true vs predicted glucose values with optional uncertainty.
     
@@ -266,7 +266,7 @@ def plot_predictions(y_true: np.ndarray,
     return fig
 
 
-def _note_excluded_pairs(title: Optional[str], excluded: int, total: int) -> str:
+def _note_excluded_pairs(title: Optional[str], excluded: int, total: int):
     """
     Add the excluded-pair count to a grid figure's title.
 
@@ -284,7 +284,7 @@ def plot_clarke_analysis(y_true: np.ndarray,
                          y_pred: np.ndarray,
                          figsize: Tuple[int, int] = (10, 10),
                          title: Optional[str] = None,
-                         save_path: Optional[str] = None) -> Optional[Figure]:
+                         save_path: Optional[str] = None):
     """
     Plot Clarke Error Grid Analysis for glucose predictions.
     
@@ -329,7 +329,7 @@ def plot_parkes_analysis(y_true: np.ndarray,
                         diabetes_type: int = 1,
                         figsize: Tuple[int, int] = (10, 10),
                         title: Optional[str] = None,
-                        save_path: Optional[str] = None) -> Optional[Figure]:
+                        save_path: Optional[str] = None):
     """
     Plot Parkes Error Grid Analysis for glucose predictions.
     
@@ -378,7 +378,7 @@ def create_prediction_dashboard(y_true: np.ndarray,
                                input_sequences: Optional[np.ndarray] = None,
                                sample_interval_minutes: int = 5,
                                figsize: Tuple[int, int] = (16, 16),
-                               save_path: Optional[str] = None) -> Optional[Figure]:
+                               save_path: Optional[str] = None):
     """
     Create a comprehensive dashboard with predictions, error analysis, error grids, and temporal visualization.
     

@@ -44,7 +44,7 @@ class ParkesEGA:
         self._max_range = 550 if units_mg_dl else 550 * 0.05556
         
     def identify_regions(self, y_true: Union[float, np.ndarray], 
-                        y_pred: Union[float, np.ndarray]) -> Dict[str, np.ndarray]:
+                        y_pred: Union[float, np.ndarray]):
         """
         Identify which Parkes EGA region each measurement pair belongs to.
         
@@ -101,7 +101,7 @@ class ParkesEGA:
         return regions
     
     def analyze(self, y_true: Union[float, np.ndarray], 
-                y_pred: Union[float, np.ndarray]) -> Dict[str, Union[int, float, np.ndarray]]:
+                y_pred: Union[float, np.ndarray]):
         """
         Perform complete Parkes EGA analysis.
         
@@ -142,7 +142,7 @@ class ParkesEGA:
              show_labels: bool = True,
              point_size: float = 30,
              alpha: float = 0.5,
-             title: Optional[str] = None) -> plt.Figure:
+             title: Optional[str] = None):
         """
         Plot the Parkes Error Grid with optional data points.
         
@@ -255,7 +255,7 @@ class ParkesEGA:
                      show_labels: bool = True,
                      point_size: float = 30,
                      alpha: float = 0.5,
-                     title: Optional[str] = None) -> plt.Axes:
+                     title: Optional[str] = None):
         """
         Plot the Parkes Error Grid with optional data points.
         
@@ -360,7 +360,7 @@ class ParkesEGA:
         return ax
     
     def print_summary(self, y_true: Union[float, np.ndarray], 
-                     y_pred: Union[float, np.ndarray]) -> None:
+                     y_pred: Union[float, np.ndarray]):
         """
         Print a summary of the Parkes EGA analysis results.
         
@@ -394,7 +394,7 @@ class ParkesEGA:
 # Convenience functions for direct use
 def identify_regions(y_true: Union[float, np.ndarray], 
                     y_pred: Union[float, np.ndarray],
-                    units_mg_dl: bool = True) -> Dict[str, np.ndarray]:
+                    units_mg_dl: bool = True):
     """
     Identify Parkes EGA regions for measurement pairs.
     
@@ -424,7 +424,7 @@ def plot_parkes_grid(y_true: Union[float, np.ndarray] = None,
                     y_pred: Union[float, np.ndarray] = None,
                     units_mg_dl: bool = True,
                     figsize: Tuple[int, int] = (10, 10),
-                    **kwargs) -> plt.Figure:
+                    **kwargs):
     """
     Plot Parkes Error Grid with optional data points.
     

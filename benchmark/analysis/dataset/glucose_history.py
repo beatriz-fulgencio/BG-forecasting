@@ -73,7 +73,7 @@ class GlucoseHistoryAnalysis:
         if self.seed is not None:
             print(f"Seed: {self.seed}")
 
-    def load_and_preprocess_glucose_data(self, patient_ids: Optional[List[int]] = None) -> Dict:
+    def load_and_preprocess_glucose_data(self, patient_ids: Optional[List[int]] = None):
         """
         Load and preprocess glucose data for all patients.
         
@@ -155,7 +155,7 @@ class GlucoseHistoryAnalysis:
             print(f"✗ Failed to load glucose data: {e}")
             return {}
     
-    def _calculate_glucose_statistics(self, glucose: np.ndarray) -> Dict:
+    def _calculate_glucose_statistics(self, glucose: np.ndarray):
         """Calculate glucose statistics."""
         # Ensure glucose is float type for calculations
         glucose = glucose.astype(float)
@@ -290,7 +290,7 @@ class GlucoseHistoryAnalysis:
         
         print(f"✓ Saved glucose summary: {Path(save_path).name}")
     
-    def run_glucose_history_analysis(self, patient_ids: Optional[List[int]] = None) -> bool:
+    def run_glucose_history_analysis(self, patient_ids: Optional[List[int]] = None):
         """
         Run glucose history analysis.
         

@@ -163,7 +163,7 @@ def analyze_persistence_runs(
     return per_run, per_patient, summary
 
 
-def plot_persistence(per_patient: pd.DataFrame, output_path: Path) -> None:
+def plot_persistence(per_patient: pd.DataFrame, output_path: Path):
     """Plot patient-level persistence errors by horizon."""
     import matplotlib.pyplot as plt
 
