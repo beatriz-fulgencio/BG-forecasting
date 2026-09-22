@@ -68,7 +68,9 @@ training:
   finetune_epochs: 10
   batch_size: 16               # Cui et al.; the gru siblings use 64
   learning_rate: 0.0003        # Cui et al. pre_lr
-  device: cpu                  # bitwise-reproducible; see the README note on mps
+  device: cuda                 # GPU. seeds still fix init/shuffling, but cuDNN kernels
+                               # are not bitwise-reproducible the way the cpu path was.
+                               # Use "auto" to fall back (cuda -> mps -> cpu) instead.
 
 evaluation:
   metrics: [mae, rmse, mape, mard, tir, clarke_ega, parkes_ega]
