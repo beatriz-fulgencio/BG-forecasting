@@ -1,0 +1,81 @@
+# Publication run: transformer regular vs transfer, full 12-patient OhioT1DM
+# cohort, 30-minute horizon, 3 training seeds, per-patient figures.
+#
+# Unlike the gru/lstm/rnn siblings this is a single-horizon run. It asks two
+# questions only: does transfer still beat regular training for an attention
+# model, and does the per-patient error pattern hold. The second is why every
+# non-architecture field below is copied verbatim from full_gru_30min.yaml --
+# same cohort, same split, same seeds, same preprocessing -- so a rank
+# disagreement between the two runs can only come from the architecture.
+#
+# The architecture and the optimiser settings are Cui et al.'s published
+# configuration, https://github.com/r-cui/GluPred (MIT), utils/opt.py:
+#   num_layers 3, d_model 128, heads 4, d_ff 512, dropout 0.1,
+#   attention_dropout 0.1, pre_lr 3e-4, ft_lr 5e-5, 10 + 10 epochs, batch 16.
+# Nothing here is tuned. Searching hyperparameters for this row alone would make
+# it a different kind of result from the gru/lstm/rnn rows, so it is a
+# reproduction of the published configuration rather than a second search.
+#
+# save_predictions must stay true: the zone-D nested bootstrap reads those
+# per-patient CSVs and they cannot be reconstructed afterwards.
+schema_version: 1
+
+experiment:
+  name: full_transformer_30min
+  description: transformer regular vs transfer, 12 OhioT1DM patients, 30 min horizon, seeds 41-43
+  author: Beatriz Fulgencio
+
+data:
+  dataset: ohiot1dm
+  root: data
+  version: "both"
+  patients: all            # 540 544 552 559 563 567 570 575 584 588 591 596
+  train_ratio: 0.9
+  validation_ratio: 0.1
+
+preprocessing:
+  window_size: 12          # 60 min of history; Cui et al. use 24, see the article note
+  prediction_horizon: 6   # 6 steps x 5 min = 30 min
+  sampling_rate: 5
+  unimodal: false
+  include_feature_engineering: true
+  normalization: standardize
+
+model:
+  type: transformer
+  architecture:
+    d_model: 128
+    nhead: 4
+    num_layers: 3
+    dim_feedforward: 512
+    dropout: 0.1
+    attention_dropout: 0.1
+    batch_first: true
+
+training:
+  mode: both
+  seeds: [41, 42, 43]
+  # Cui et al. give their regular baseline the same 10 + 10 schedule as their
+  # transfer arm, differing only in the stage-one loader. This run keeps the
+  # benchmark's own regular protocol instead, so the transformer and gru rows
+  # are scored the same way; see the early stopping note below.
+  epochs: 50                   # regular: early stopping decides
+  early_stopping_patience: 5
+  # Cui et al.'s exact fine-tuning rate: 3e-4 pre-train -> 5e-5 fine-tune.
+  # The gru siblings carry a tuned 0.00017 instead; this run does not tune.
+  finetune_learning_rate: 0.00005
+  pretrain_epochs: 10          # transfer: 10 + 10
+  finetune_epochs: 10
+  batch_size: 16               # Cui et al.; the gru siblings use 64
+  learning_rate: 0.0003        # Cui et al. pre_lr
+  device: cpu                  # bitwise-reproducible; see the README note on mps
+
+evaluation:
+  metrics: [mae, rmse, mape, mard, tir, clarke_ega, parkes_ega]
+
+output:
+  directory: results/experiments
+  save_model: false
+  save_predictions: true       # required by RUN/experiments/run_zone_d_analysis.py
+  generate_plots: true         # per-patient dashboard + Clarke + Parkes figures
+  export_format: [json, csv]

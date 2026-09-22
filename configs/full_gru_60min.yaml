@@ -1,0 +1,64 @@
+# Publication run: gru regular vs transfer, full 12-patient OhioT1DM
+# cohort, 60-minute horizon, 3 training seeds, per-patient figures.
+#
+# One of twelve sibling configs (gru/lstm/rnn x 15/30/45/60 min). Run all of
+# them; the shift analysis takes one parent aggregate per horizon and is run
+# once per model.
+#
+# version: both resolves all 12 patients across the 2018 and 2020 releases,
+# which puts n=12 above the n>=8 floor for the top-quartile screen and the
+# five-predictor exploratory model.
+#
+# save_predictions must stay true: the zone-D nested bootstrap reads those
+# per-patient CSVs and they cannot be reconstructed afterwards.
+schema_version: 1
+
+experiment:
+  name: full_gru_60min
+  description: gru regular vs transfer, 12 OhioT1DM patients, 60 min horizon, seeds 41-43
+  author: Beatriz Fulgencio
+
+data:
+  dataset: ohiot1dm
+  root: data
+  version: "both"
+  patients: all            # 540 544 552 559 563 567 570 575 584 588 591 596
+  train_ratio: 0.9
+  validation_ratio: 0.1
+
+preprocessing:
+  window_size: 12          # 60 min of history
+  prediction_horizon: 12   # 12 steps x 5 min = 60 min
+  sampling_rate: 5
+  unimodal: false         # glucose + basal + bolus + carbs (F=4)
+  include_feature_engineering: false   # keep F=4; true appends hour_sin/hour_cos -> F=6
+  normalization: standardize
+
+model:
+  type: gru
+  architecture:
+    hidden_size: 64
+    num_layers: 2
+    dropout: 0.2
+    batch_first: true
+
+training:
+  mode: both
+  seeds: [41, 42, 43]
+  epochs: 50                   # regular: early stopping decides
+  early_stopping_patience: 5   # Cui et al. schedule
+  pretrain_epochs: 10          # transfer: 10 + 10
+  finetune_epochs: 10
+  batch_size: 64
+  learning_rate: 0.001
+  device: cpu                  # bitwise-reproducible; see the README note on mps
+
+evaluation:
+  metrics: [mae, rmse, mape, mard, tir, clarke_ega, parkes_ega]
+
+output:
+  directory: results/experiments
+  save_model: false
+  save_predictions: true       # required by RUN/experiments/run_zone_d_analysis.py
+  generate_plots: true         # per-patient dashboard + Clarke + Parkes figures
+  export_format: [json, csv]
