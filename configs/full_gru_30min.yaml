@@ -30,7 +30,7 @@ preprocessing:
   window_size: 12          # 60 min of history
   prediction_horizon: 6   # 6 steps x 5 min = 30 min
   sampling_rate: 5
-  unimodal: true
+  unimodal: false         # glucose + basal + bolus + carbs (F=4)
   include_feature_engineering: false   # keep F=4; true appends hour_sin/hour_cos -> F=6
   normalization: standardize
 
