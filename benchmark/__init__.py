@@ -10,7 +10,7 @@ metrics, and experiment management for fair comparison of different approaches.
 from typing import Any, List
 
 __version__ = "0.1.0"
-__author__ = "Blood Glucose Forecasting Research Group"
+__author__ = "IMScience Lab - Beatriz Fulgencio"
 
 __all__ = [
     "ConfigError",

@@ -39,7 +39,7 @@ print(data[540].columns)
 ## Adding New Datasets
 
 1. Implement a loader in `benchmark/data/loaders.py`.
-2. Register and validate it in `benchmark/configs/config_manager.py`.
+2. Register and validate it in `configs/config_manager.py`.
 3. Add unit and integration tests.
 4. Document its on-disk format and access terms here.
 

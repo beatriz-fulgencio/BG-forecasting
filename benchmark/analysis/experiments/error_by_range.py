@@ -272,6 +272,13 @@ def analyze_error_by_range_runs(
     seeds = [run["training_seed"] for run in metadata]
     if len(set(seeds)) != len(seeds):
         raise ValueError(f"Training seeds must be distinct; got {seeds}")
+
+    mode_directories = {Path(run["run_dir"]).resolve().parent for run in metadata}
+    if len(mode_directories) > 1:
+        raise ValueError(
+            "All runs must be seed subdirectories of the same <experiment>/<mode> directory; "
+            f"got {sorted(map(str, mode_directories))}"
+        )
     
     expected_references = references_by_seed[0]
     for run_metadata, references in zip(metadata[1:], references_by_seed[1:]):

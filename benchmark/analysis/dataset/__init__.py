@@ -8,15 +8,16 @@ they were read from: no predicted value and no metric ever feeds a feature.
 Signal characterisation
     :mod:`~benchmark.analysis.dataset.distribution_shift` (train->test shift)
     and :mod:`~benchmark.analysis.dataset.signal_features` (irregularity),
-    driven by ``RUN/experiments/run_shift_analysis.py``. Neither needs
-    a run at all; both take glucose series directly.
+    driven by ``RUN/dataset/run_dataset_analysis.py``. They use the reference
+    run only to identify the cohort, releases, and sampling rate. Experiment
+    analyses read the resulting table when relating these features to error.
 
 Cohort description
     :mod:`~benchmark.analysis.dataset.patient_features` for per-patient level,
     variability, clinical-range and dynamics features over the held-out series,
     and :mod:`~benchmark.analysis.dataset.glucose_history` for the population's
-    train and test series read straight from ``raw/ohiot1dm``. Both are driven
-    by ``RUN/dataset/run_dataset_analysis.py``, and both take a loaded run:
+    train and test series read straight from ``raw/ohiot1dm``. They are driven
+    by ``RUN/dataset/run_dataset_analysis.py`` and take a loaded run:
     ``patient_features`` for its ``y_true`` and prediction-export timestamps,
     ``glucose_history`` for the cohort and sampling rate.
 """

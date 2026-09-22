@@ -40,7 +40,7 @@ Across runs
 Figures
     :mod:`~benchmark.analysis.experiments.shift_mae_plot` draws per-patient distributional shift against MAE. The shift itself is a dataset property (:mod:`benchmark.analysis.dataset.distribution_shift`); the error it is plotted against is not, which is why the figure lives here.
 
-The analysis classes pull in matplotlib, seaborn and scikit-learn, so they are
+The analysis classes pull in matplotlib and scikit-learn, so they are
 imported on first access rather than at package import: reading results should
 not cost a plotting stack.
 """

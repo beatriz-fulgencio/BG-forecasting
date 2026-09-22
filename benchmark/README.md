@@ -86,8 +86,9 @@ benchmark/
 Experiments use a strict, versioned YAML schema. Unknown keys and unsupported
 values are errors rather than ignored options. See
 [`configs/default.yaml`](configs/default.yaml) for every field and
-[`configs/example_experiment.yaml`](configs/example_experiment.yaml) for the
-two-patient smoke run.
+the mode-specific smoke runs [`example_regular.yaml`](../configs/example_regular.yaml),
+[`example_transfer.yaml`](../configs/example_transfer.yaml), and
+[`example_both.yaml`](../configs/example_both.yaml).
 
 ### Key Configuration Sections
 - **Data**: OhioT1DM version, root, patients, and train/validation ratio

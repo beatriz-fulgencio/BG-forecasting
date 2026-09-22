@@ -1,0 +1,55 @@
+# Minimal regular-learning (RL) versus transfer-learning (TL) comparison.
+# OhioT1DM must be downloaded separately. The runner creates regular and
+# transfer subruns from training.mode: both so their seeds stay paired.
+schema_version: 1
+
+experiment:
+  name: example_rl_vs_tl
+  description: Two-patient GRU smoke comparison of regular and transfer learning
+  author: Researcher Name
+
+data:
+  dataset: ohiot1dm
+  root: data
+  version: "2020"
+  patients: [540, 544]
+  train_ratio: 0.9
+  validation_ratio: 0.1
+
+preprocessing:
+  window_size: 12
+  prediction_horizon: 6
+  sampling_rate: 5
+  unimodal: true
+  include_feature_engineering: true
+  normalization: standardize
+
+model:
+  type: gru
+  architecture:
+    hidden_size: 32
+    num_layers: 1
+    dropout: 0.0
+    batch_first: true
+
+training:
+  mode: both
+  seeds: [42]
+  epochs: 1
+  pretrain_epochs: 2
+  finetune_epochs: 2
+  batch_size: 32
+  learning_rate: 0.001
+  finetune_learning_rate: 0.00017
+  early_stopping_patience: 3
+  device: auto
+
+evaluation:
+  metrics: [mae, rmse]
+
+output:
+  directory: results/experiments
+  save_model: false
+  save_predictions: true
+  generate_plots: false
+  export_format: [json, csv]
