@@ -581,9 +581,11 @@ def _run_mode(
                 "learning_rate": config.training.learning_rate,
                 "early_stopping_patience": config.training.early_stopping_patience,
             }
-            if mode == "transfer":
+            if mode == "transfer" or config.training.regular_schedule == "two_stage":
+                if mode == "transfer" and config.training.transfer_early_stopping_patience is not None:
+                    fit_args["early_stopping_patience"] = config.training.transfer_early_stopping_patience
                 pretrain_history = model.fit(
-                    train_loader=global_loader,
+                    train_loader=global_loader if mode == "transfer" else train_loader,
                     epochs=config.training.pretrain_epochs,
                     **fit_args,
                 )

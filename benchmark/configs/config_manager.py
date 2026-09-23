@@ -285,6 +285,8 @@ class TrainingConfig:
     finetune_learning_rate: Optional[float] = None
     early_stopping_patience: int = 10
     device: str = "auto"
+    regular_schedule: str = "single_stage"
+    transfer_early_stopping_patience: Optional[int] = None
 
     @classmethod
     def from_dict(cls, raw: Any):
@@ -293,7 +295,7 @@ class TrainingConfig:
             data,
             ("mode", "seeds", "epochs", "pretrain_epochs", "finetune_epochs", "batch_size",
              "learning_rate", "finetune_learning_rate", "early_stopping_patience",
-             "device"),
+             "device", "regular_schedule", "transfer_early_stopping_patience"),
             "training",
         )
         if "mode" not in data:
@@ -331,6 +333,12 @@ class TrainingConfig:
         device = _string(data.get("device", "auto"), "training.device").lower()
         if device not in {"auto", "cpu", "cuda", "mps"}:
             raise ConfigError("training.device must be auto, cpu, cuda, or mps")
+        regular_schedule = data.get("regular_schedule", "single_stage")
+        if regular_schedule not in {"single_stage", "two_stage"}:
+            raise ConfigError("training.regular_schedule must be single_stage or two_stage")
+        transfer_patience = data.get("transfer_early_stopping_patience")
+        if transfer_patience is not None:
+            transfer_patience = _positive_int(transfer_patience, "training.transfer_early_stopping_patience")
         return cls(
             mode,
             normalized_seeds,
@@ -342,6 +350,8 @@ class TrainingConfig:
             finetune_learning_rate,
             _positive_int(data.get("early_stopping_patience", 10), "training.early_stopping_patience"),
             device,
+            regular_schedule,
+            transfer_patience,
         )
 
 

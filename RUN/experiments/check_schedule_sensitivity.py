@@ -70,6 +70,12 @@ class SensitivityChecks(unittest.TestCase):
         t=self.env['table']
         np.testing.assert_allclose(t.change_vs_arm0,[0,-.1,-.2],atol=1e-12)
         self.assertIn('wilcoxon_bh_q', t)
+        for name, cfg in self.env['EXPECTED_CONFIGS'].items():
+            self.assertEqual(cfg['training']['regular_schedule'], 'single_stage')
+            self.assertEqual(cfg['training']['transfer_early_stopping_patience'], 20)
+            self.assertEqual(cfg['training']['learning_rate'], .0003)
+            self.assertEqual(cfg['training']['finetune_learning_rate'], .00005)
+            self.assertEqual(cfg['training']['epochs'], 20 if name.endswith('fixed20') else 200)
         self.assertEqual(len(self.env['epoch_table']),4)
 
     def test_real_training_keeps_later_patient_paired(self):
