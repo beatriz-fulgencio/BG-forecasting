@@ -37,7 +37,7 @@ preprocessing:
 model:
   type: lstm
   architecture:
-    hidden_size: 64
+    hidden_size: 128
     num_layers: 2
     dropout: 0.2
     batch_first: true
@@ -45,15 +45,13 @@ model:
 training:
   mode: both
   seeds: [41, 42, 43]
-  epochs: 50                   # regular: early stopping decides
+  epochs: 200                   # regular: early stopping decides
   early_stopping_patience: 5   # Cui et al. schedule
   pretrain_epochs: 10          # transfer: 10 + 10
   finetune_epochs: 10
-  batch_size: 64
+  batch_size: 16
   learning_rate: 0.001
-  device: cuda                 # GPU. seeds still fix init/shuffling, but cuDNN kernels
-                               # are not bitwise-reproducible the way the cpu path was.
-                               # Use "auto" to fall back (cuda -> mps -> cpu) instead.
+  device: cuda                 # A100/Colab rerun; three seeds retained
 
 evaluation:
   metrics: [mae, rmse, mape, mard, tir, clarke_ega, parkes_ega]
