@@ -51,15 +51,32 @@ def load_support(folder):
 
 
 def clean_frame(raw, preprocessor):
-    # Called AFTER each temporal slice: forward fills cannot see an excluded
-    # historical prefix, validation observations, or future test observations.
+    # Called ONCE per record, BEFORE slicing, exactly as the published pipeline
+    # preprocesses a whole train/test file. Cleaning each slice separately
+    # instead looks stricter but is not: basic_preprocessing forward-fills basal
+    # and then drops any row still holding a NaN, so a slice containing no basal
+    # event loses every row. Basal events are sparse -- a 4.8 h validation tail
+    # usually holds none -- which emptied 10 of 12 patients at the 1-day budget.
+    # What crosses a budget boundary here is a pump setting carried forward in
+    # time, never a glucose observation: glucose is never filled (strategy
+    # 'none'), and no fill moves backwards.
     with contextlib.redirect_stdout(io.StringIO()):
         df = preprocessor.preprocess_ohiot1dm_data(
             {0: raw.copy()}, include_feature_engineering=False)[0]
     if df.empty:
         raise ValueError('Empty preprocessed segment')
-    if not set(FEATURES) <= set(df.columns):
-        raise ValueError('Missing one of the required glucose/basal/bolus/carbs channels')
+    # A channel is absent when the patient logged no such event at all: patient
+    # 567's test record has no meals, so the loader emits no carbs column. The
+    # published pipeline substitutes zeros for an absent feature column
+    # (benchmark/data/torch_dataset.py), and the line below already zero-fills
+    # missing bolus/carbs values, so an absent event channel is zero here too.
+    # Glucose and basal are not event channels -- absence means a broken record.
+    for channel in ['bolus', 'carbs']:
+        if channel not in df.columns:
+            df[channel] = 0.
+    absent = [c for c in FEATURES if c not in df.columns]
+    if absent:
+        raise ValueError('Missing required channel(s): ' + ', '.join(absent))
     df = df[FEATURES].apply(pd.to_numeric, errors='coerce')
     df.index = pd.to_datetime(df.index)
     df = df.sort_index()
@@ -79,7 +96,10 @@ def cgm_bounds(raw):
     return times.min(), times.max()
 
 
-def raw_budget(raw, days, cfg):
+def budget_split(frame, days, cfg):
+    # `frame` is already preprocessed; slicing it keeps every budget on the same
+    # cleaned rows, so budgets differ only in how much history they include.
+    raw = frame
     start, last = cgm_bounds(raw)
     end = last + pd.Timedelta(minutes=cfg['sampling_minutes'])
     if days != 'full':
@@ -133,25 +153,34 @@ def windows(frame, cfg, mean, sd):
                 persistence=a[starts+w-1, 0].astype(float))
 
 
-def prepare_segments(raw, raw_test, days, cfg, prep):
-    tr, va, audit = raw_budget(raw, days, cfg)
-    train, val = clean_frame(tr, prep), clean_frame(va, prep)
+def prepare_segments(clean_train, clean_test, days, cfg):
+    train, val, audit = budget_split(clean_train, days, cfg)
+    if train.empty or val.empty:
+        raise ValueError('Empty preprocessed segment')
     mean, sd = fit_scaler(train)
     train_w, val_w = windows(train, cfg, mean, sd), windows(val, cfg, mean, sd)
-    if train_w is None or len(train_w['dataset']) < cfg['min_train_windows']:
-        raise ValueError('Too few contiguous training windows')
-    if val_w is None or len(val_w['dataset']) < cfg['min_validation_windows']:
-        raise ValueError('Too few contiguous validation windows')
+    # Report the counts: a budget that is short by one window and a budget with
+    # a sensor outage covering the whole slice need different answers.
+    n_train_w = len(train_w['dataset']) if train_w else 0
+    n_val_w = len(val_w['dataset']) if val_w else 0
+    if n_train_w < cfg['min_train_windows']:
+        raise ValueError(f"Too few contiguous training windows: {n_train_w} < "
+                         f"{cfg['min_train_windows']} (budget {days})")
+    if n_val_w < cfg['min_validation_windows']:
+        raise ValueError(f"Too few contiguous validation windows: {n_val_w} < "
+                         f"{cfg['min_validation_windows']} (budget {days})")
     audit.update(n_train=len(train_w['dataset']), n_validation=len(val_w['dataset']),
                  normalization_mean=mean.tolist(), normalization_sd=sd.tolist())
     result = dict(train=train_w, val=val_w, mean=mean, sd=sd, audit=audit)
-    if raw_test is not None:
-        test = clean_frame(raw_test, prep)
+    if clean_test is not None:
+        test = clean_test
         if train.index.max() >= val.index.min() or val.index.max() >= test.index.min():
             raise ValueError('Train/validation/test chronology violated')
         test_w = windows(test, cfg, mean, sd)
-        if test_w is None or len(test_w['dataset']) < cfg['min_test_windows']:
-            raise ValueError('Too few contiguous test windows')
+        n_test_w = len(test_w['dataset']) if test_w else 0
+        if n_test_w < cfg['min_test_windows']:
+            raise ValueError(f"Too few contiguous test windows: {n_test_w} < "
+                             f"{cfg['min_test_windows']}")
         audit.update(n_test=len(test_w['dataset']), test_start=str(test.index.min()),
                      test_end=str(test.index.max()))
         result['test'] = test_w
@@ -265,7 +294,8 @@ def make_protocol(data_root, support, cfg):
                 numpy_version=np.__version__, pandas_version=pd.__version__,
                 sources={name: digest(Path(support)/name) for name in ['loaders.py', 'preprocessors.py']},
                 runner_sha256=digest(__file__),
-                design='most recent target-history budget; chronological validation; fixed official test; leave-target-out sources')
+                design='most recent target-history budget; chronological validation; fixed official test; '
+                       'leave-target-out sources; preprocessing applied once per record before slicing')
 
 
 def run(data_root, support, cfg, local_root, drive_root, device='cuda'):
@@ -300,14 +330,16 @@ def run(data_root, support, cfg, local_root, drive_root, device='cuda'):
             raw[pid][mode].index = pd.to_datetime(raw[pid][mode].index)
     # Preflight EVERY budget before spending GPU time. Eligibility cannot be
     # selected by observed performance. Detailed errors are saved, then fail.
-    source, audits, errors = {}, [], []
+    source, audits, errors, clean = {}, [], [], {}
     print('Preflighting every patient/budget and source split...', flush=True)
     for pid in cfg['patients']:
         try:
-            source[pid] = prepare_segments(raw[pid]['train'], None, 'full', cfg, prep)
+            # Preprocess each record once; every budget then slices these rows.
+            clean[pid] = {mode: clean_frame(raw[pid][mode], prep) for mode in ['train', 'test']}
+            source[pid] = prepare_segments(clean[pid]['train'], None, 'full', cfg)
             reference = None
             for budget in cfg['budgets_days']:
-                pack = prepare_segments(raw[pid]['train'], raw[pid]['test'], budget, cfg, prep)
+                pack = prepare_segments(clean[pid]['train'], clean[pid]['test'], budget, cfg)
                 current = pack['test']['timestamps']
                 if reference is not None and not np.array_equal(current, reference):
                     raise ValueError('Test windows change across budgets')
@@ -363,7 +395,7 @@ def run(data_root, support, cfg, local_root, drive_root, device='cuda'):
                         print(f'Skip completed {job.name}', flush=True)
                         continue
                 job.mkdir(parents=True, exist_ok=True)
-                pack = prepare_segments(raw[pid]['train'], raw[pid]['test'], budget, cfg, prep)
+                pack = prepare_segments(clean[pid]['train'], clean[pid]['test'], budget, cfg)
                 row = dict(patient_id=pid, seed=seed, **pack['audit'])
                 start_time = time.perf_counter()
                 for mode in ['regular', 'transfer']:
