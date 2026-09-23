@@ -23,7 +23,7 @@ FEATURES = ['glucose', 'basal', 'bolus', 'carbs']
 DEFAULTS = dict(model='gru', horizon_steps=6, window=12, sampling_minutes=5,
     hidden_size=64, layers=2, dropout=.2, batch_size=64,
     source_epochs=10, target_epochs=50, source_patience=5, target_patience=10,
-    learning_rate=.001, validation_fraction=.2, budgets_days=[1, 3, 7, 'full'],
+    learning_rate=.001, validation_fraction=.2, budgets_days=[3, 5, 7, 10, 'full'],
     seeds=[41, 42, 43], patients=sorted(sum(COHORT.values(), [])),
     min_train_windows=32, min_validation_windows=8, min_test_windows=32,
     bootstrap_replicates=20000, analysis_seed=20260923, smoke=False)
@@ -490,7 +490,7 @@ def summarize(local, remote, cfg):
         '95% intervals jointly resample whole patients and shared training seeds; additional-benefit intervals use the same draws for the budget and full-history control. Intervals are pointwise, not simultaneous.',
         'Wilcoxon tests use patient cross-seed means; BH spans both metrics and every budget in this run. Different architectures/horizons run separately would require a broader family before combined claims.',
         '', '## Interpretation', '',
-        'The primary comparison is MAE at 1 day versus this experiment\'s full-history control. A larger advantage is a hypothesis, not guaranteed. Report all budgets, including null or adverse effects. Inspect absolute RL/TL errors and persistence as well as percentage gains.',
+        'The primary comparison is MAE at 3 days versus this experiment\'s full-history control. A larger advantage is a hypothesis, not guaranteed. Report all budgets, including null or adverse effects. Inspect absolute RL/TL errors and persistence as well as percentage gains.',
         'This is simulated limited-history personalization with a retrospective source library, not a prospectively recruited incident-patient study. Other patients\' source records are assumed available; their calendar dates are not restricted to each target\'s test date.',
         'Chronological validation, gap-checked windows, source-only pretraining validation, and matched 50-epoch target caps differ from the article\'s original schedule. Compare budgets within this new experiment; do not replace the published full-history headline with its best budget.',
         'The budgets share the same final training time, controlling history recency. Test separation/gaps follow the official Ohio split. This experiment cannot explain why earlier submitted numbers changed.',
