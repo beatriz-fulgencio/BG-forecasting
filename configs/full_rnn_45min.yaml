@@ -46,12 +46,14 @@ model:
 training:
   mode: both
   seeds: [41, 42, 43]
-  epochs: 200                   # regular: early stopping decides
-  early_stopping_patience: 5   # Cui et al. schedule
+  epochs: 20                   # metadata only for two_stage; stages below control fits
+  early_stopping_patience: 20  # >= each 10-epoch stage: no early stopping
   pretrain_epochs: 10          # transfer: 10 + 10
   finetune_epochs: 10
   batch_size: 16
-  learning_rate: 0.001
+  learning_rate: 0.0003
+  finetune_learning_rate: 0.00005
+  regular_schedule: two_stage # both stages use target data for RL
   device: cuda                 # A100/Colab rerun; three seeds retained
 
 evaluation:
