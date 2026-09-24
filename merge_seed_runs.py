@@ -146,6 +146,11 @@ def merge_cell(model: str, horizon: int, seeds: List[int], runs_index: Dict[str,
         return f"{cell}: base config not found at {base_config_path}"
     config = load_config(base_config_path)
 
+    from grid_protocol import matches
+    for seed, parent in sources.items():
+        if not matches(parent / "resolved_config.yaml", base_config_path, seed):
+            return f"{cell}: seed {seed} configuration differs from the current grid; rerun it before merging"
+
     runs: List[Dict[str, Any]] = []
     for seed in seeds:
         for mode in MODES:

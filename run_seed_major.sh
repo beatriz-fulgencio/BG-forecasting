@@ -38,29 +38,16 @@ RESULTS_DIR="${RESULTS_DIR:-results/experiments}"
 mkdir -p "$GEN_DIR" "$LOG_DIR"
 
 # --- preflight -------------------------------------------------------------
-# The point of this rerun is F=4 (glucose, basal, bolus, carbs). unimodal must
-# be false, and feature engineering must be off or the cyclical hour columns
-# push it to F=6. Fail here rather than after hours of training.
+# Validate the documented six-feature baseline before spending training time.
 preflight() {
-  local cfg="$1"
-  [[ -f "$cfg" ]] || { echo "MISSING config: $cfg" >&2; return 1; }
-  grep -qE '^  unimodal: *false' "$cfg" \
-    || { echo "$cfg: unimodal is not false -> would train on glucose only (F=1)" >&2; return 1; }
-  grep -qE '^  include_feature_engineering: *false' "$cfg" \
-    || { echo "$cfg: include_feature_engineering is not false -> F=6, not 4" >&2; return 1; }
+  "$PYTHON" grid_protocol.py validate "$1"
 }
 
-# --- has this cell already finished? ---------------------------------------
-# A parent run is complete when its directory holds aggregate_metrics.json.
-# Match on the experiment name recorded in resolved_config.yaml, because the
-# directory names are timestamped and hashed.
+# Resume only a completed run with the same resolved scientific settings.
 already_done() {
-  local name="$1" dir
-  [[ -d "$RESULTS_DIR" ]] || return 1
-  while IFS= read -r dir; do
-    [[ -f "$(dirname "$dir")/aggregate_metrics.json" ]] && return 0
-  done < <(grep -rlx "  name: ${name}" "$RESULTS_DIR"/*/resolved_config.yaml 2>/dev/null || true)
-  return 1
+  local name="$1" model="$2" horizon="$3" seed="$4"
+  "$PYTHON" grid_protocol.py completed "configs/full_${model}_${horizon}min.yaml" \
+    --results-dir "$RESULTS_DIR" --name "$name" --seed "$seed"
 }
 
 # --- derive the single-seed config -----------------------------------------
@@ -95,7 +82,7 @@ for seed in $SEEDS; do
   for model in $MODELS; do
     for horizon in $HORIZONS; do
       name="full_${model}_${horizon}min_seed${seed}"
-      if already_done "$name"; then
+      if already_done "$name" "$model" "$horizon" "$seed"; then
         skipped=$((skipped + 1))
       else
         planned+=("${seed}:${model}:${horizon}")

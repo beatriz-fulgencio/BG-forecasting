@@ -27,11 +27,11 @@ data:
   validation_ratio: 0.1
 
 preprocessing:
-  window_size: 12          # 60 min of history
+  window_size: 24          # horizon-specific input history
   prediction_horizon: 12   # 12 steps x 5 min = 60 min
   sampling_rate: 5
-  unimodal: false         # glucose + basal + bolus + carbs (F=4)
-  include_feature_engineering: false   # keep F=4; true appends hour_sin/hour_cos -> F=6
+  unimodal: false         # glucose, insulin, carbs, and cyclic time features
+  include_feature_engineering: true    # six input features
   normalization: standardize
 
 model:
@@ -45,15 +45,18 @@ model:
 training:
   mode: both
   seeds: [41, 42, 43]
-  epochs: 20                   # metadata only for two_stage; stages below control fits
-  early_stopping_patience: 20  # >= each 10-epoch stage: no early stopping
+  epochs: 200                  # declared single-stage RL cap
+  early_stopping_patience: 5
   pretrain_epochs: 10          # transfer: 10 + 10
   finetune_epochs: 10
   batch_size: 16
   learning_rate: 0.0003
   finetune_learning_rate: 0.00005
-  regular_schedule: two_stage # both stages use target data for RL
-  device: cuda                 # A100/Colab rerun; three seeds retained
+  regular_schedule: single_stage
+  transfer_early_stopping_patience: 5
+  weight_decay: 0.00001
+  grad_clip_norm: 1.0
+  device: cuda                # GPU rerun; archived testing seeds 43/44 were trained on CPU
 
 evaluation:
   metrics: [mae, rmse, mape, mard, tir, clarke_ega, parkes_ega]
