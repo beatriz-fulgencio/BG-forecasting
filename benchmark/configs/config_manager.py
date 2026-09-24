@@ -1,6 +1,7 @@
 """Experiment configuration."""
 
 from dataclasses import asdict, dataclass, field
+import math
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
 
@@ -287,6 +288,8 @@ class TrainingConfig:
     device: str = "auto"
     regular_schedule: str = "single_stage"
     transfer_early_stopping_patience: Optional[int] = None
+    weight_decay: float = 0.0
+    grad_clip_norm: Optional[float] = 1.0
 
     @classmethod
     def from_dict(cls, raw: Any):
@@ -295,7 +298,8 @@ class TrainingConfig:
             data,
             ("mode", "seeds", "epochs", "pretrain_epochs", "finetune_epochs", "batch_size",
              "learning_rate", "finetune_learning_rate", "early_stopping_patience",
-             "device", "regular_schedule", "transfer_early_stopping_patience"),
+             "device", "regular_schedule", "transfer_early_stopping_patience",
+             "weight_decay", "grad_clip_norm"),
             "training",
         )
         if "mode" not in data:
@@ -339,6 +343,16 @@ class TrainingConfig:
         transfer_patience = data.get("transfer_early_stopping_patience")
         if transfer_patience is not None:
             transfer_patience = _positive_int(transfer_patience, "training.transfer_early_stopping_patience")
+        weight_decay = data.get("weight_decay", 0.0)
+        if (isinstance(weight_decay, bool) or not isinstance(weight_decay, (int, float))
+                or not math.isfinite(weight_decay) or weight_decay < 0):
+            raise ConfigError("training.weight_decay must be a finite non-negative number")
+        grad_clip_norm = data.get("grad_clip_norm", 1.0)
+        if grad_clip_norm is not None:
+            if (isinstance(grad_clip_norm, bool) or not isinstance(grad_clip_norm, (int, float))
+                    or not math.isfinite(grad_clip_norm) or grad_clip_norm <= 0):
+                raise ConfigError("training.grad_clip_norm must be a finite positive number or null")
+            grad_clip_norm = float(grad_clip_norm)
         return cls(
             mode,
             normalized_seeds,
@@ -352,6 +366,8 @@ class TrainingConfig:
             device,
             regular_schedule,
             transfer_patience,
+            float(weight_decay),
+            grad_clip_norm,
         )
 
 

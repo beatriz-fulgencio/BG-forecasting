@@ -1,0 +1,688 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+\usepackage[T1]{fontenc}
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\newcommand{\yes}{\checkmark}
+\newcommand{\no}{--}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+\begin{document}
+
+\title{How Much Does Transfer Learning Help Personalized Glucose Forecasting, and What Limits It?}
+
+% \author{...}
+
+\maketitle
+\begin{abstract}
+Transfer learning is the established response to data scarcity in personalized
+blood glucose forecasting, and the literature reports large improvements from
+it. However, measuring that benefit consistently is only half of the question;
+the other half is understanding what limits it. Thus, we evaluate three foundational
+recurrent architectures (Vanilla RNN, LSTM, GRU) across four prediction
+horizons (15--60 minutes) on the OhioT1DM cohort under a protocol that scores
+every model at the horizon it forecasts and tests significance over the  patients
+rather than over autocorrelated predictions. Under this protocol the benefit, 
+though real and consistent, is moderate, amounting to a 4--8\% error reduction for the
+gated architectures (up to 15\% for the Vanilla RNN, where the from-scratch
+baseline is weakest) in 11 of 12 architecture$\times$horizon combinations. The more informative finding is not the benefit of transfer learning, but the difficulty it leaves unresolved. Per-patient difficulty is
+stable across architectures, horizons, and training regimes, and even gated
+architectures do not narrow the gap on the hardest patients, which indicates
+that difficulty is a property of the patient rather than of model capacity.
+Train-to-test distributional shift consistently predicts that difficulty,
+even though the association is largely explained by the intrinsic irregularity of
+the glucose signal rather than by shift itself. Still, because it is computed from a
+patient's history before training, the shift nevertheless identifies in advance the
+patients least likely to benefit from population transfer. Residual error
+concentrates in the glycemic extremes, during rapid glucose change, and in a
+stable subset of difficult patients, whereas the errors most likely to alter a
+treatment decision are missed hypoglycemic events, which account for 90.4\% of
+the dangerous Clarke zone-D predictions (themselves only 1.2\% of all predictions)
+even though hypoglycemia has the smallest average point error. Both the squared-error objective and Clarke and Parkes A+B compliance fail to reflect this clinical risk.
+\end{abstract}
+
+\begin{IEEEkeywords}
+blood glucose forecasting, transfer learning, recurrent neural networks,
+personalization, distributional shift, clinical safety
+\end{IEEEkeywords}
+
+% =====================================================================
+\section{Introduction}
+\label{sec:intro}
+% =====================================================================
+
+Diabetes mellitus, characterized by chronic hyperglycemia due to defects in
+insulin secretion or action \cite{10.2337/dc10-S062}, requires maintaining blood
+glucose between 80--130 mg/dL preprandially (just before eating) and below
+180 mg/dL postprandially (one to two hours after a meal) \cite{10.2337/dc25-S006}.
+Despite advances in Continuous Glucose Monitoring (CGM)
+\cite{Practical-aspects-of-diabetes-technology}, glycemic control remains
+challenging, and hypoglycemia is the most frequent complication in
+insulin-treated patients \cite{glucose-monitoring-system}. Continuous monitoring,
+however, makes real-time forecasting clinically possible: a model that
+anticipates the next 30 minutes can warn a patient before a hypoglycemic event
+rather than after it, turning reactive treatment into preventive action.
+
+Personalization is essential for this task, seeing that glycemic dynamics are individual, and
+insulin sensitivity, meal patterns, physical activity, and stress responses do
+not generalize across people. Because the patient needs the treatment right away, they can only provide a few weeks of data before accurate forecast is needed. Transfer learning, which pre-trains on a
+population and then fine-tunes on the target patient, is the established response
+to this data-scarcity problem \cite{CUI9474665, Zhu2020Dilated}, and the
+literature reports large improvements from it. Those reported improvements,
+however, span a wide range, and part of that spread reflects how the benefit is
+measured rather than the models themselves.
+
+The aim of this work is intentionally focused. Deployment decisions depend on the
+size of the transfer benefit, not merely on its existence: a team that believes
+population pre-training resolves data scarcity will treat personalization as
+solved, whereas a team that knows the benefit is moderate will plan for the
+residual difficulty that remains in individual patients. Rather than proposing a
+new architecture or attempting to surpass state-of-the-art accuracy, we therefore
+measure how much transfer learning actually improves personalized glucose
+forecasting once it is evaluated under a single consistent protocol. We evaluate
+three foundational recurrent architectures (Vanilla RNN, LSTM, GRU) across four
+prediction horizons (15, 30, 45, 60 min), scoring every model at its horizon and testing significance over patients rather than over
+autocorrelated predictions. We then harden the resulting comparison against the
+ways a twelve-patient result can mislead, using patient-level bootstrap
+resampling, a per-patient sign test, and Benjamini--Hochberg correction. Under
+this protocol, the benefit of transfer learning is real and consistent but
+moderate, amounting to a 4--8\% error reduction for the gated architectures (up to
+15\% for the Vanilla RNN, where the from-scratch baseline is weakest) rather than
+the larger figures sometimes attributed to transfer.
+
+
+Measuring the benefit is only half of the question; the other half is
+understanding what limits it. Even after transfer learning, patients differ
+considerably in how well they can be forecast, and this ordering is stable across
+architectures and horizons. We tested the natural explanation for this
+heterogeneity, particularly train-to-test distributional shift, and we found that it is a genuine indicator of prediction difficulty. That predictor, however, primarily reflects the intrinsic irregularity of the glucose signal rather than acting as an independent cause. This difficulty score has practical clinical value because it is computed from a patient's historical glucose data before model training, allowing the patients least likely to benefit from population transfer to be identified in advance.
+
+Finally, aggregate accuracy hides where prediction errors occur. We show that residual error concentrates in a stable subset of difficult patients and during periods of rapid glucose change, patterns that cohort-average metrics average away. More importantly, the largest errors are not the most clinically important. Large hyperglycemic errors usually remain clinically safe because they still indicate the correct treatment direction. In contrast, the errors most likely to change a treatment decision are missed hypoglycemic events, even though hypoglycemia has the smallest average point error. 
+
+Our contributions are as follows:
+
+\begin{enumerate}
+  \item \textbf{An evaluation protocol for personalized forecasting}: horizon-consistent
+  scoring, per-patient significance testing (rather than pooling autocorrelated
+  predictions, which manufactures significance from sample size alone), and
+  resampling-based robustness (patient-level bootstrap, per-patient sign test,
+  and Benjamini--Hochberg correction). Under this protocol, transfer learning
+  yields a consistent improvement (4--8\% for the gated architectures, up to 15\%
+  for the Vanilla RNN) in 11 of 12 architecture$\times$horizon combinations across
+  three recurrent architectures.
+
+  \item \textbf{A pre-computable patient-difficulty indicator.} We show that
+  train-to-test distributional shift consistently predicts which patients benefit
+  least from population transfer. We further show that this relationship is
+  largely explained by the intrinsic irregularity of the glucose signal rather
+  than by shift itself. Because the indicator can be computed from a patient's
+  history before training, it enables early identification of patients who are
+  least likely to benefit from transfer learning.
+
+  \item \textbf{A clinical localization of prediction error.} We distinguish
+  where prediction error is largest from where it is most clinically important.
+  Residual error concentrates in the glycemic extremes, during rapid glucose
+  change, and in a stable subset of difficult patients, whereas the errors most
+  likely to alter treatment decisions are missed hypoglycemic events. This
+  failure mode is hidden by both cohort-average accuracy metrics and aggregate
+  Clarke and Parkes A+B compliance, providing a concrete target for
+  personalization.
+\end{enumerate}
+% =====================================================================
+\section{Related Work}
+\label{sec:related}
+% =====================================================================
+
+Glucose forecasting has evolved from statistical models \cite{Bremer1999} through
+classical machine learning to deep sequence models. Now, recurrent architectures and
+their gated variants dominate, due to their optimal fit to temporal dependencies of CGM signals \cite{Mazgouti2025}. Recent work extends this with graph attention over multiple channels \cite{Piao2025}, LSTM and gradient-boosting ensembles \cite{Mazgouti2025}, continuous-time formulations \cite{Fitzgerald2023}, and transformer tokenization for long horizons \cite{Karagoz2025}. Comparative
+evaluations also exist in Xie and Wang \cite{XieWang2020} benchmark against classical
+autoregressive baselines on OhioT1DM, and the Blood Glucose Level Prediction Challenge \cite{MarlingBunescu2020}. We adopt three
+foundational recurrent architectures (Vanilla RNN, LSTM, GRU) as our cohort
+rather than proposing a new one. This is mainly because our question is how much transfer learning
+helps and what limits it, and that question is best asked on models whose behavior
+is well recorded. Therefore, our contribution is methodological and diagnostic
+rather than architectural. It composes a protocol for measuring transfer honestly,
+together with a pre-computable indicator for directing it, and both apply unchanged
+to newer architectures.
+
+Although the need for personalization is now well established in the literature, data scarcity remains its primary obstacle, and transfer learning has emerged as the dominant strategy for overcoming it. Cui et al.~\cite{CUI9474665} pre-train a recurrent self-attention network on aggregated multi-patient data and fine-tune it per patient on OhioT1DM, reporting significant RMSE reductions at 30 and 60 minutes, and Zhu et al.~\cite{Zhu2020Dilated} apply the same two-stage paradigm to dilated
+RNNs. Notably, when Cui et al.\ isolate the transfer effect itself in an ablation, the reduction is modest: 2.8\% RMSE at 30 minutes (17.82 vs.\ 18.34 mg/dL) and 3.5\% at 60 minutes~\cite{CUI9474665}, rather than the double-digit gains sometimes attributed to transfer. These studies report cohort-level averages at one or two horizons. That reporting cannot answer how large the benefit really is once it is
+measured consistently, whether it holds across architectures and horizons, and
+what explains the residual difficulty it leaves behind. Our work addresses those
+questions directly.
+
+Furthermore, two further gaps motivate our analysis. First, per-patient difficulty is commonly
+reported but rarely explained. Outside diabetes, the discrepancy between training
+and deployment distributions is a well-studied cause of degradation
+\cite{QuinoneroCandela2009, MorenoTorres2012}, and in CGM the training and test
+periods are weeks apart, which makes distributional shift the natural hypothesis. Second, aggregate MAE and RMSE average over
+glycemic states, which biases model selection toward the target range. Wolff et
+al.~\cite{Wolff2025} show that the lowest-RMSE model on OhioT1DM predicted glycemic
+events poorly, whereas a clinically weighted loss improved event detection. Error
+grid analysis \cite{Clarke1987ClinicalAccuracy, Parkes2000Consensus} captures the
+clinical consequence of an error, but it is usually reported as a single aggregate
+figure, so we decompose it by glycemic zone. Table~\ref{tab:related} summarizes the gap.
+
+\begin{table}[t]
+\centering
+\caption{Representative deep glucose-forecasting studies. Prior work reports
+cohort-level accuracy; at most it compares against a classical baseline, and none
+anchors against a naive persistence reference, decomposes error by glycemic zone,
+or explains \emph{which} patients are hard to forecast.}
+\label{tab:related}
+\scriptsize
+\setlength{\tabcolsep}{3.5pt}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}p{1.55cm}p{1.5cm}p{0.85cm}ccc@{}}
+\toprule
+\textbf{Study} & \textbf{Dataset} & \textbf{Horizon (min)} &
+\textbf{Baseline} & \textbf{EGA} & \textbf{Patient anal.} \\
+\midrule
+GARNN \cite{Piao2025}          & OhioT1DM, ARISES, Shanghai & 30, 60  & \no  & agg.\ & \no \\
+RSA+TL \cite{CUI9474665}       & OhioT1DM (12)              & 30, 60  & \no  & \no   & \no \\
+DRNN+TL \cite{Zhu2020Dilated}  & UVA/Padova, OhioT1DM       & 30      & \no  & \no   & \no \\
+Transformer \cite{Karagoz2025} & DCLP3 (112), OhioT1DM      & 30--240 & \no  & \no   & \no \\
+ML bench.\ \cite{XieWang2020}  & OhioT1DM                   & 30, 60  & class.\ & \no   & \no \\
+\midrule
+\textbf{This work} & OhioT1DM (12) & 15--60 & \textbf{pers.} & \textbf{zone} & \textbf{\yes} \\
+\bottomrule
+\end{tabular}
+\vspace{2pt}
+\raggedright
+\scriptsize
+\textbf{Baseline}: ``pers.''\ = naive persistence/zero-order-hold; ``class.''\ =
+classical model (e.g.\ ARX); ``\no'' = none.
+\textbf{EGA}: ``agg.''\ = aggregate A+B only; ``zone'' = decomposed by glycemic
+range. \textbf{Patient anal.}: explains what makes a patient hard, beyond
+reporting per-patient scores.
+\end{table}
+
+% =====================================================================
+\section{Proposed Approach}
+\label{sec:approach}
+% =====================================================================
+
+We fix a single evaluation protocol and apply it identically to three recurrent
+architectures under two training regimes. This section defines the data
+(\ref{sec:data}), the models and transfer procedure (\ref{sec:models}), the
+zero-parameter baseline (\ref{sec:baseline}), the evaluation protocol
+(\ref{sec:protocol}), and how we quantify distributional shift (\ref{sec:shift}).
+
+% ---------------------------------------------------------------------
+\subsection{Problem Formulation and Data}
+\label{sec:data}
+% ---------------------------------------------------------------------
+Given an input sequence $X_{1:N}=[x_1,\dots,x_N]$ with $x_i\in\mathbb{R}^F$, the
+task is to predict $g_{t+H}$ at horizon $H$. Following the common OhioT1DM setup
+and the preparation of Cui et al.~\cite{CUI9474665}, we use $F=4$ features per step
+(interstitial glucose at 5-min sampling, basal insulin, insulin bolus, and
+carbohydrate intake) and one hour of history ($N=12$) to forecast
+$H\in\{3,6,9,12\}$ steps, that is, 15, 30, 45, and 60 minutes ahead. Records are
+segmented into overlapping windows by a stride-one sliding window, and only
+complete sequences with uniform 5-minute sampling are retained. Following the
+provided OhioT1DM split, the first six weeks of each patient are used for training
+and the final $\sim$10 days for testing (mean train:test ratio ${\approx}4.4{:}1$),
+which yields $\approx$10{,}500 overlapping windows per patient. Because adjacent
+windows share most of their observations, the effective number of independent
+examples is far smaller. This is the data-scarcity condition that motivates
+transfer, and, as \ref{sec:protocol} notes, it is also the reason adjacent test
+predictions are not independent. For transfer we apply target-centric $z$-score
+normalization. This additionally aligns the pooled non-target data to the target patient's scale; from-scratch training uses only target data, so no cross-patient alignment is involved.
+
+
+% ---------------------------------------------------------------------
+\subsection{Models and Training Regimes}
+\label{sec:models}
+% ---------------------------------------------------------------------
+We evaluate a Vanilla RNN, an LSTM, and a GRU within one framework that separates
+model-specific recurrence from shared training and evaluation code. Each model is
+an encoder $E_\theta:\mathbb{R}^{N\times F}\!\to\mathbb{R}^{N\times D}$ followed by
+a decoder $D_\theta:\mathbb{R}^{N\times D}\!\to\mathbb{R}^{H}$. All three share
+capacity and regularization, so the comparison isolates the recurrence type. We
+contrast two training regimes. \emph{Regular learning} (RL) trains a
+patient-specific model from scratch, and \emph{transfer learning} (TL) follows the
+two-stage paradigm of Cui et al.~\cite{CUI9474665}: generic parameters are first
+learned on the pooled data of all non-target patients, and are then fine-tuned on
+the target patient at a reduced learning rate.
+
+
+\paragraph{Configuration.}
+All architectures use 128 hidden units, 2 layers, dropout 0.2, the Adam optimizer
+(weight decay $10^{-5}$, gradient-norm clip 1.0), MSE loss, batch size 16, and a
+seeded 90/10 per-patient split (seed 42). Following the two-stage schedule of Cui
+et al.~\cite{CUI9474665}, TL pre-trains for a fixed 10 epochs on the pooled cohort
+and then fine-tunes for a fixed 10 epochs on the target patient. RL trains from
+scratch with hard early stopping (patience 5) and a
+200-epoch cap.\footnote{Observed convergence at 51--68 epochs confirms that early
+stopping, not the cap, terminated RL training.} All three architectures share this
+configuration exactly, so the comparison isolates the recurrence type and the
+training regime. Models were implemented in PyTorch. All results use a single
+training seed, held fixed across both regimes. Because the seed is common to TL and
+RL, its effect is common-mode and largely cancels in the TL$-$RL difference we
+test, so it cannot confound the direction of the comparison. It bounds only the
+precision of the absolute magnitudes, which we accordingly report as
+direction-and-consistency results rather than point estimates.
+(\ref{sec:limitations}).
+
+Note that early stopping is available only to the from-scratch regime, so the training schedule is if anything conservative with respect to transfer.
+
+% ---------------------------------------------------------------------
+\subsection{Persistence Baseline}
+\label{sec:baseline}
+% ---------------------------------------------------------------------
+As a zero-parameter reference we use \emph{persistence}, $\hat{g}_{t+H}=g_t$, which
+is the null assumption that glucose does not change. Any learned model must beat it
+to justify its parameters. It is not merely a sanity check: at the shortest horizon
+the from-scratch models only cluster around it (7.8--8.8 vs.\ 9.08 mg/dL at 15 min),
+which sharpens what transfer must improve upon. A patient's persistence MAE also
+serves as an interpretable, parameter-free proxy for how intrinsically hard that
+patient's signal is (\ref{sec:res-shift}).
+
+% ---------------------------------------------------------------------
+\subsection{Evaluation Protocol}
+\label{sec:protocol}
+% ---------------------------------------------------------------------
+Two evaluation choices are usually left implicit, yet each materially changes a
+reported result. We state and fix both.
+
+\paragraph{Score the horizon you forecast.}
+For horizon $H$ a model emits a prediction at every step $t{+}1,\dots,t{+}H$, and
+the near-term steps are far easier. We therefore report \emph{horizon-step} error
+$\text{MAE}_{t+H}=\lvert\hat{g}_{t+H}-g_{t+H}\rvert$, applied identically to both
+regimes, because a forecast advertised at $H$ minutes should be judged at $H$
+minutes, which is the point at which a clinician acts.
+
+\paragraph{Test over patients, not predictions.}
+We assess significance over the 12 paired per-patient errors (Wilcoxon signed-rank
+or paired $t$), not over pooled predictions. Consecutive predictions from
+overlapping windows are strongly autocorrelated and not independent, so pooling
+them manufactures significance from sample size alone. As an illustration, the same
+$\sim$0.6 mg/dL per-patient gap that a paired test reports as a moderate effect
+($d\approx1$) returns $p\approx10^{-31}$ when the $\sim$23{,}500 predictions are
+pooled, despite a negligible per-prediction effect. We report MAE, RMSE, and MAPE
+per patient (equal-weight averaged), Cohen's $d$ alongside $p$-values---the $d$ is a
+parametric effect-size companion to the distribution-free signed-rank test, and the
+two agree in direction and significance across every cell---and Benjamini--Hochberg
+FDR control across the multi-horizon family. Clinical safety is
+assessed with the Clarke~\cite{Clarke1987ClinicalAccuracy} and Type-1 Parkes
+grids~\cite{Parkes2000Consensus,Pfutzner2013Parkes}. Combined A+B is the accepted
+acceptability criterion~\cite{KOST200831} (Clarke $\ge95\%$, Parkes $\ge98\%$), and
+we additionally decompose absolute error across the five ISO glycemic ranges.
+
+% ---------------------------------------------------------------------
+\subsection{Quantifying Distributional Shift}
+\label{sec:shift}
+% ---------------------------------------------------------------------
+We quantify each patient's train-to-test distributional shift as the Wasserstein-1
+distance between their training and test glucose marginals. We then test whether
+this shift predicts per-patient model error, and whether that association is
+independent of the intrinsic irregularity of the signal, which we measure by sample
+entropy and lag-1 autocorrelation. Section~\ref{sec:res-shift} reports the outcome.
+
+% =====================================================================
+\section{Results and Discussion}
+\label{sec:results}
+% =====================================================================
+
+This section follows the following order. We first quantify how
+much transfer learning helps (\ref{sec:res-tl}) and confirm that both regimes
+remain clinically safe in aggregate (\ref{sec:res-safety}). We then ask where the
+residual error actually falls (\ref{sec:res-localization}), and whether
+distributional shift explains it (\ref{sec:res-shift}). 
+
+% ---------------------------------------------------------------------
+\subsection{How Much Transfer Learning Helps}
+\label{sec:res-tl}
+% ---------------------------------------------------------------------
+Under the horizon-step, per-patient protocol, transfer learning reduces MAE in 11
+of the 12 architecture$\times$horizon cells, with moderate to large paired effect
+sizes ($d=0.74$--$2.26$; Table~\ref{tab:finding1}). For the gated architectures the
+reduction is 4--8\% (GRU 4.3--8.2\%, LSTM 4.1--7.0\%); the Vanilla RNN reaches
+14.8\% at 15 minutes, where its from-scratch baseline is weakest, so transfer helps
+most exactly where the un-transferred model is worst. The benefit is consistent
+across all three architectures and across horizons. The single exception is the
+Vanilla RNN at 60 minutes (3.7\%, $p=0.09$). Against the zero-parameter persistence
+baseline (Table~\ref{tab:finding1}), the best model improves on the no-change rule
+by ${\approx}17\%$ at 15 minutes (7.52 vs.\ 9.08 mg/dL), which bounds how much the
+learned dynamics add.
+
+
+We then test the robustness of this result considering the limitations of the twelve-patient dataset for the study using three complementary analyses. \textbf{(i)} A patient-level bootstrap (10,000 resamples) excludes zero in 11 of 12 architecture$\times$horizon cells; only RNN-60 crosses zero (95\% CI $[-0.17,1.81]$). \textbf{(ii)} A per-patient sign test shows that transfer learning outperforms training from scratch in most patients in every cell (8--12 of 12), reaching $p<0.05$ in 10 of 12. The two exceptions, LSTM-45 (9/12) and RNN-60 (8/12), are also the cells with the fewest patient-level wins. \textbf{(iii)} Benjamini--Hochberg correction across all 12 Wilcoxon tests leaves 11 of 12 significant at $q=0.05$. All three analyses identify the same single weak cell, RNN-60, while supporting the remaining eleven. Thus, transfer learning provides a consistent but moderate benefit. This magnitude aligns with the isolated transfer effect reported by Cui et al.~\cite{CUI9474665} (2.8\% RMSE improvement at 30 min).
+
+\begin{table}[t]
+\centering
+\caption{Transfer vs.\ regular learning, horizon-step MAE (mg/dL), paired
+per-patient ($n=12$, single seed). MAE$_{\text{pers}}$ is the zero-parameter
+persistence baseline (a per-horizon reference, identical across architectures).
+Positive \% and $d$ favor transfer; $\dagger$ = survives BH-FDR ($q=0.05$). At
+$n=12$ the two-sided signed-rank $p$ is floored at $2/2^{12}\approx5\times10^{-4}$,
+which the cells reporting $0.0005$ reach. All 12 cells shown.}
+\label{tab:finding1}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}ll rrr r r r c@{}}
+\toprule
+Model & $H$ & MAE$_{\text{TL}}$ & MAE$_{\text{RL}}$ & MAE$_{\text{pers}}$ & \%\,impr. & Wilcoxon $p$ & $d$ & wins \\
+\midrule
+GRU  & 15 &  7.52 &  7.91 &  9.08 &  5.0 & 0.0049$^\dagger$ & 1.06 & 11/12 \\
+GRU  & 30 & 12.99 & 13.62 & 15.85 &  4.7 & 0.0024$^\dagger$ & 0.97 & 11/12 \\
+GRU  & 45 & 17.40 & 18.17 & 21.10 &  4.3 & 0.0210$^\dagger$ & 0.74 & 10/12 \\
+GRU  & 60 & 21.09 & 22.96 & 25.21 &  8.2 & 0.0024$^\dagger$ & 1.12 & 11/12 \\
+\addlinespace[2pt]
+LSTM & 15 &  7.51 &  7.83 &  9.08 &  4.1 & 0.0005$^\dagger$ & 2.09 & 12/12 \\
+LSTM & 30 & 12.99 & 13.96 & 15.85 &  7.0 & 0.0005$^\dagger$ & 2.26 & 12/12 \\
+LSTM & 45 & 17.43 & 18.54 & 21.10 &  6.0 & 0.0068$^\dagger$ & 1.03 &  9/12 \\
+LSTM & 60 & 20.99 & 21.98 & 25.21 &  4.5 & 0.0034$^\dagger$ & 1.14 & 10/12 \\
+\addlinespace[2pt]
+RNN  & 15 &  7.52 &  8.83 &  9.08 & 14.8 & 0.0015$^\dagger$ & 1.07 & 11/12 \\
+RNN  & 30 & 13.47 & 14.88 & 15.85 &  9.5 & 0.0005$^\dagger$ & 1.50 & 12/12 \\
+RNN  & 45 & 18.21 & 19.48 & 21.10 &  6.5 & 0.0015$^\dagger$ & 1.20 & 11/12 \\
+RNN  & 60 & 22.24 & 23.10 & 25.21 &  3.7 & 0.0923           & 0.46 &  8/12 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ---------------------------------------------------------------------
+\subsection{Both Transfer and Regular Learning Meet Clinical Safety Criteria}
+\label{sec:res-safety}
+% ---------------------------------------------------------------------
+It is fair to note that a deployable forecaster should not produce errors that would drive a wrong treatment
+decision. Thus, table~\ref{tab:ega} reports Clarke and Parkes A+B compliance at 30
+minutes, where both regimes clear the accepted thresholds for every architecture. Despite a small numerical advantage for transfer learning, per-patient Clarke A+B compliance differs by no more than $\pm0.15$ percentage points between the two regimes and is not significant after Benjamini--Hochberg correction. Also, at the 30-minute horizon no
+prediction from either regime falls in the dangerous Clarke Zone E or Parkes
+Region E. The A+B score, however, hides important differences. Transfer shifts predictions from the borderline Zone B into the fully accurate Zone A, increasing A-zone occupancy by 0.5--2.2 percentage points (significant for RNN and LSTM), even though both regimes achieve similarly high A+B compliance. Both therefore meet the standard clinical safety criteria, but, as Section~\ref{sec:res-localization} shows, this summary measure does not reveal where clinically important errors occur.
+
+\begin{table}[t]
+\centering
+\caption{Clarke and Parkes A+B compliance (\%) at 30 minutes ($n=12$; Clarke
+per-patient mean, Parkes cohort). The TL$-$RL difference is not significant for any
+architecture after Benjamini--Hochberg correction ($p_{\text{BH}}\approx0.93$).}
+\label{tab:ega}
+\small
+\begin{tabular}{@{}lcc@{}}
+\toprule
+Model & Clarke A+B (TL / RL) & Parkes A+B (TL / RL) \\
+\midrule
+RNN  & 98.59 / 98.72 & 99.66 / 99.72 \\
+LSTM & 98.74 / 98.62 & 99.68 / 99.70 \\
+GRU  & 98.85 / 98.73 & 99.75 / 99.67 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ---------------------------------------------------------------------
+\subsection{Where Error Is Larger Is Not Where It Is Most Dangerous}
+\label{sec:res-localization}
+% ---------------------------------------------------------------------
+Averaging over patients and glycemic states hides two distinct patterns: where errors are largest and where they are most clinically important. These are not the same.
+\paragraph{Magnitude concentrates in the extremes, during rapid change, and in difficult patients.} At the 30-minute horizon, absolute error in the severe hyperglycemic range is approximately $1.9\times$ higher than in the target range (1.75--2.15$\times$ across architectures). Per-patient MAE ranges from 10.7 to 15.9 mg/dL (GRU-TL), with a stable ordering across models: patients 540 and 584 are consistently the most difficult, exhibiting approximately 50\% higher MAE than the easiest patients (544 and 588). Their error also nearly doubles during rapid glucose change ($|\Delta|>20$ mg/dL; Table~\ref{tab:localization}, Fig.~\ref{fig:localization}). This pattern is consistent across all three architectures.
+
+Two aspects of this pattern deserve comment. First, the ordering of patient
+difficulty is stable across architectures, which indicates that difficulty is a
+property of the patient rather than of model capacity. If the hardest patients simply exceeded the representational capacity of the Vanilla RNN, the gated architectures would be expected to reduce the performance gap, but they do not. This is consistent with the analysis in Section~\ref{sec:res-shift}, which attributes most of the difficulty to intrinsic signal irregularity rather than train-to-test distributional shift. Practically, this suggests that increasing architectural capacity is unlikely to improve performance for the patients who need it most, whereas patient-specific modeling and denser monitoring remain more promising approaches.
+Second, the three axes of error concentration are unlikely to be independent. Glycemic extremes are typically associated with rapid glucose excursions, and the patients who spend the most time outside the target range also tend to experience the fastest changes. As a result, the higher error observed in patients 540 and 584 may partly arise from the composition of their test data rather than from an independent patient effect. Separating these contributions would require conditioning simultaneously on glycemic range and rate of change, which the present analysis does not attempt.
+
+
+\begin{table}[t]
+\centering
+\caption{Error localization at 30 minutes (transfer learning): MAE (mg/dL) for the
+hardest (540, 584) vs.\ easiest (544, 588) patients, and $|$error$|$ during rapid
+glucose change for the hard patients.}
+\label{tab:localization}
+\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Model & Hard (540/584) & Easy (544/588) & Rapid-change (540/584) \\
+\midrule
+GRU  & 15.9 / 15.8 & 10.7 / 10.8 & 28.5 / 26.5 \\
+RNN  & 17.2 / 16.2 & 11.5 / 11.2 & 30.3 / 27.7 \\
+LSTM & 16.2 / 15.6 & 11.0 / 11.0 & 30.3 / 26.2 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.95\linewidth]{fig2_error_localization_patient540_GRU.png}
+\caption{Error localization for the hardest patient (540, GRU, 30-min, transfer
+learning). Error rises in the out-of-target ranges (top left; the
+severe-hypoglycemic bar, $n=3$, is not interpretable) and roughly doubles during
+rapid glucose change (bottom right: 28.5 vs.\ 15.8 mg/dL). Aggregate compliance
+(Table~\ref{tab:ega}) does not expose this.}
+\label{fig:localization}
+\end{figure}
+
+\paragraph{But magnitude is not danger.} Large errors in the hyperglycemic range rarely change the treatment decision: predicting 320 for a true 390 mg/dL is a 70 mg/dL error that still indicates insulin treatment and therefore falls in the safe Clarke zone B. Across the cohort, 2,164 of 2,177 severe-hyperglycemic
+predictions (99.4\%) lie in Clarke zones A or B, and none fall in the dangerous
+zone D. By contrast, the dangerous failures are almost entirely missed
+hypoglycemia. Of the 23{,}498 cohort predictions at 30 minutes only 280 (1.2\%)
+fall in the dangerous zone D, and of these 253 (90.4\%) correspond to
+hypoglycemic values (reference $<70$ mg/dL) predicted as normal, a pattern that
+holds in 10 of the 11 patients with any zone-D error. With zone C essentially
+empty and zone E absent, zone D consists almost entirely of missed hypoglycemic
+events (Fig.~\ref{fig:clarke540}). Yet hypoglycemia has the smallest average point
+error of any glycemic range. Consequently, accuracy metrics and overall A+B
+compliance ($>98\%$ for this cohort) fail to reveal the clinically most important
+failure mode.
+
+This asymmetry has a simple explanation. Point error and clinical risk are governed by different quantities: error magnitude depends on the local dynamics of the glucose signal, whereas clinical risk depends on proximity to a treatment threshold. In the hyperglycemic range, the treatment direction remains unchanged over a wide range of values, so even large errors usually preserve the correct clinical action. Near the hypoglycemic threshold, however, a prediction error of only a few tens of mg/dL can cross the 70 mg/dL boundary and reverse the treatment decision.
+
+This mismatch extends to model training. An MSE objective weights errors by their squared magnitude, assigning the least weight to the range in which every dangerous failure in this cohort occurs. Consistent with this, Wolff et al.~\cite{Wolff2025} found that the lowest-RMSE model on OhioT1DM detected glycemic events poorly, whereas a clinically weighted loss improved event detection. Our results support the same conclusion: both the loss function and the evaluation metrics are misaligned with clinical risk. The 253 zone-D predictions further reinforce this interpretation, as all correspond to hypoglycemic values predicted as normal, consistent with regression toward the conditional mean in a range where low glucose values are relatively rare.
+
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.95\linewidth]{fig4_clarke_localized_patient540_GRU}
+\caption{Clarke error grid for the hardest patient (540; GRU, 30-min), a
+worst-case view, not cohort-representative (cohort GRU-TL Clarke A+B 98.8\%).
+\textbf{Left:} the severe-hyperglycemic predictions (red) carry the largest errors
+but stay same-side in zone B; the dangerous zone-D points are almost all
+hypoglycemia predicted normal. \textbf{Right:} rapid-change points ($|\Delta|>20$
+mg/dL) scatter markedly wider than the calm cloud. Where error is large is not
+where it is dangerous, and aggregate A+B compliance (which this patient passes at
+98.2\%) sees neither.}
+\label{fig:clarke540}
+\end{figure}
+
+% ---------------------------------------------------------------------
+\subsection{Patient Difficulty Is Intrinsic}
+\label{sec:res-shift}
+% ---------------------------------------------------------------------
+Patient difficulty is remarkably stable: the same patients are consistently the hardest to predict across architectures, prediction horizons, and training regimes (Table~\ref{tab:patient}). A natural explanation is train-to-test distributional shift, quantified as the Wasserstein-1 distance between each patient's training and test glucose distributions. Although the shift-to-difficulty correlation is underpowered within individual horizons ($n=12$; Pearson $r\approx0.09$--$0.42$), pooling standardized MAE across horizons reveals a significant positive association for all three transfer-learned models (GRU $r=0.30$, $p=0.035$; RNN $r=0.41$, $p=0.004$; LSTM $r=0.30$, $p=0.037$). A multivariate model (MAE $\sim$ shift $+$ test spread $+$ time-in-range) likewise retains a significant effect of shift (coefficient $+0.27$, $p<0.001$). Distributional shift therefore consistently predicts which patients are hardest to forecast.
+
+That relationship, however, is largely explained by intrinsic signal irregularity. Adding measures for this (sample entropy and lag-1 autocorrelation) reduces the shift coefficient from $+0.27$ to $+0.10$ ($p=0.12$), while entropy remains significant. Thus, much of the association between distributional shift and patient difficulty reflects the intrinsic volatility of the glucose signal rather than the effect of the shift itself. Patient 570 is a clear example of this: despite exhibiting the largest train-to-test shift (Wasserstein 27.3), it is among the easiest patients to forecast (MAE 11.1 mg/dL) because its glucose trajectory is smooth (Fig.~\ref{fig:pophistory}). In contrast, patients 540 and 584 exhibit both high shift and high difficulty because their volatile signals are both harder to predict and more likely to differ between training and test periods. 
+
+
+\begin{table}[t]
+\centering
+\caption{Per-patient glycemic characteristics ordered by GRU-TL 30-min MAE. Shift
+is the Wasserstein-1 train--test distance; TIR $\Delta$ is the test-minus-train
+change in time-in-range (percentage of glucose readings within 70--180 mg/dL), in
+percentage points (pp). Neither shift nor variability orders difficulty cleanly:
+patient 570 has the largest shift yet is among the easiest.}
+\label{tab:patient}
+\footnotesize
+\setlength{\tabcolsep}{4.5pt}
+\begin{tabular}{@{}c r rr r r@{}}
+\toprule
+ID & Shift & Train Std & Test Std & TIR $\Delta$ (pp) & MAE \\
+\midrule
+544 &  8.8 & 80.1 & 73.6 & $+4.5$  & 10.71 \\
+588 & 12.5 & 58.3 & 53.3 & $-11.6$ & 10.83 \\
+570 & \textbf{27.3} & 73.8 & 78.4 & $-12.3$ & \textbf{11.13} \\
+596 &  2.5 & 71.9 & 63.8 & $+6.9$  & 11.46 \\
+552 &  6.2 & 69.2 & 74.2 & $-2.3$  & 11.69 \\
+559 &  9.1 & 83.9 & 83.4 & $+1.8$  & 12.55 \\
+563 & 21.9 & 61.2 & 67.4 & $-14.5$ & 13.01 \\
+567 &  8.3 & 77.7 & 73.6 & $+1.9$  & 13.58 \\
+575 & 10.0 & 69.9 & 68.9 & $-3.6$  & 13.85 \\
+591 & 11.4 & 75.6 & 58.2 & $+8.9$  & 15.34 \\
+584 & 22.2 & 78.6 & 75.5 & $+12.1$ & 15.77 \\
+540 & 21.8 & 58.7 & 69.3 & $-10.2$ & 15.91 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The practical value of distributional shift then lies not in explaining patient difficulty, but in identifying it. Because it can be computed from a patient's historical glucose data before any model is trained, it provides an early indicator of which patients are least likely to benefit from population transfer. These patients are natural candidates for patient-specific modeling, denser monitoring, or more frequent retraining.
+
+Fig.~\ref{fig:tsne} makes the underlying structure visible: test-period glucose
+windows form patient-coherent, error-coherent clusters, but those clusters follow
+the structure of the glucose signal itself rather than the train--test gap.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.92\textwidth]{population_glucose_overview.png}
+\caption{Per-patient glucose history across the cohort, train (blue) and test
+(red) periods split at the dashed line. The Wasserstein-1 shift score
+(Table~\ref{tab:patient}) quantifies the train-to-test difference visible here; a
+volatile, wide-ranging trace (e.g.\ 540, 584) is both harder to forecast and more
+likely to differ between the two periods, whereas a smooth, predictable trace can
+be easy despite a large train--test shift (e.g.\ 570: Wasserstein 27.3, yet among
+the easiest to forecast at MAE 11.1 mg/dL).}
+\label{fig:pophistory}
+\end{figure*}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.95\linewidth]{fig3_tsne_test_GRU.png}
+\caption{t-SNE of test-period glucose windows (GRU, 30-min), colored by patient
+(left) and per-patient MAE (right). Difficulty is spatially organized, but the
+high- and low-error clusters follow the structure of the glucose signal, not the
+train--test gap, consistent with shift proxying intrinsic irregularity
+(\ref{sec:res-shift}).}
+\label{fig:tsne}
+\end{figure}
+
+
+% ---------------------------------------------------------------------
+\subsection{Limitations}
+\label{sec:limitations}
+% ---------------------------------------------------------------------
+Four limitations should be considered when interpreting these results. First, all results use a \textbf{single training seed}. This limits the precision of the reported effect sizes, but is of less consequence for the central comparison of this study because the same seed is used for both transfer learning and training from scratch. Any seed-specific variation is largely shared between the two regimes and cancels in the TL$-$RL difference. To account for the remaining uncertainty, we report only effects that remain consistent under patient-level bootstrap resampling, a per-patient sign test, and Benjamini--Hochberg correction.
+Second, evaluation is confined to the twelve-patient OhioT1DM cohort.
+The reported effect sizes may differ in other populations, although the main qualitative findings, including a moderate benefit from transfer learning, the relationship between distributional shift and intrinsic signal irregularity, and the concentration of clinically important failures in missed hypoglycemia, are expected to generalize beyond this cohort. Third, our transfer-learning setting assumes access to pooled multi-patient data. Privacy-preserving alternatives, such as federated pre-training, are outside the scope of this work. Fourth, both training regimes use the full six weeks of target-patient data
+provided by OhioT1DM. This is the condition under which transfer learning is
+least needed, since the target patient already supplies enough data to fit a
+patient-specific model, and the improvement reported here (4--8\% for the gated
+architectures, up to 15\% for the Vanilla RNN) should therefore be interpreted as
+the benefit available in the data-rich case rather than as the maximum benefit of
+transfer. A cold-start evaluation, in which the
+target patient contributes one week of data or less, would test the more
+clinically realistic scenario of a newly monitored patient, and the gap between
+the two regimes would be expected to widen under that condition. Establishing the
+minimum quantity of target data required for effective fine-tuning, and the point
+at which the benefit of population pre-training saturates, is left to future work.
+
+
+% =====================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+% =====================================================================
+In this study, we set out to measure how much transfer learning actually improves personalized
+glucose forecasting, and to explain what limits it. Under a horizon-consistent, per-patient evaluation protocol, transfer learning yields a real, consistent, but moderate benefit: a 4--8\% reduction in prediction error for the gated architectures (up to 15\% for the Vanilla RNN), significant in 11 of 12 architecture$\times$horizon combinations across three recurrent architectures. Additionally, the difficulty that transfer learning leaves
+behind is stable across models and predictable in advance. Distributional shift identifies the hardest patients, although this relationship is largely explained by the intrinsic irregularity of their glucose signals rather than by shift itself. Where prediction error occurs also matters clinically. Error is largest in the glycemic extremes and during periods of rapid glucose change, but the clinically important failures are missed hypoglycemic events, even though hypoglycemia has the smallest average point error. These failures are invisible to summary safety metrics. 
+
+These findings point future work in three directions. First, because patient difficulty can be estimated from a patient's historical glucose data before training, hard patients can be identified in advance for patient-specific modeling or denser monitoring. Second, because the clinically important failures are missed hypoglycemic events, both training objectives and evaluation metrics should focus mostly on the hypoglycemic range rather than optimizing average prediction error. Third, because the benefit of transfer learning is moderate under the relatively data-rich conditions studied here, it is likely to be most valuable when applied selectively: to the patients who benefit most and to those with the least target data. Evaluating this hypothesis in a cold-start setting, where the target patient contributes one week of data or less, would determine whether the gains reported here represent a lower bound on the benefit of transfer learning for newly monitored patients. Extending this evaluation protocol to additional cohorts, cold-start settings, and privacy-preserving transfer learning is a natural next step.
+
+
+
+\begin{thebibliography}{00}
+
+\bibitem{10.2337/dc10-S062}
+American Diabetes Association, ``Diagnosis and classification of diabetes
+mellitus,'' \emph{Diabetes Care}, vol. 33, no. Suppl. 1, pp. S62--S69, 2010.
+
+\bibitem{10.2337/dc25-S006}
+American Diabetes Association Professional Practice Committee, ``6. Glycemic goals
+and hypoglycemia: Standards of care in diabetes---2025,'' \emph{Diabetes Care},
+vol. 48, no. Suppl. 1, pp. S128--S145, 2024.
+
+\bibitem{Practical-aspects-of-diabetes-technology}
+B. E. Marks \emph{et al.}, ``Practical aspects of diabetes technology use,''
+\emph{J. Clin. Transl. Endocrinol.}, vol. 27, p. 100282, 2022.
+
+\bibitem{glucose-monitoring-system}
+M. Krakauer \emph{et al.}, ``Glucose alarms approach with flash glucose monitoring
+system: A narrative review,'' \emph{Diabetol. Metab. Syndr.}, vol. 17, p. 276, 2025.
+
+\bibitem{Bremer1999}
+T. Bremer and D. A. Gough, ``Is blood glucose predictable from previous values?''
+\emph{Diabetes}, vol. 48, no. 3, pp. 445--451, 1999.
+
+\bibitem{MarlingBunescu2020}
+C. Marling and R. Bunescu, ``The OhioT1DM dataset for blood glucose level
+prediction: Update 2020,'' in \emph{Proc. KDH}, CEUR-WS vol. 2675, 2020, p. 71.
+
+\bibitem{XieWang2020}
+J. Xie and Q. Wang, ``Benchmarking machine learning algorithms on blood glucose
+prediction for type I diabetes\ldots,'' \emph{IEEE Trans. Biomed. Eng.}, vol. 67,
+no. 11, pp. 3101--3124, 2020.
+
+\bibitem{Piao2025}
+C. Piao \emph{et al.}, ``GARNN: An interpretable graph attentive recurrent neural
+network for predicting blood glucose levels\ldots,'' \emph{Neural Networks}, vol.
+185, p. 107229, 2025.
+
+\bibitem{Mazgouti2025}
+L. Mazgouti \emph{et al.}, ``Optimization of blood glucose prediction with
+LSTM-XGBoost fusion\ldots,'' \emph{Biomed. Signal Process. Control}, vol. 107, p.
+107814, 2025.
+
+\bibitem{Fitzgerald2023}
+O. Fitzgerald \emph{et al.}, ``Continuous time recurrent neural networks:
+Overview and benchmarking\ldots,'' \emph{J. Biomed. Inform.}, vol. 146, p. 104498,
+2023.
+
+\bibitem{Karagoz2025}
+M. A. Karagoz \emph{et al.}, ``A comparative study of transformer-based models for
+multi-horizon blood glucose prediction,'' \emph{IFAC-PapersOnLine}, vol. 59, no.
+2, pp. 155--160, 2025.
+
+\bibitem{CUI9474665}
+R. Cui \emph{et al.}, ``Personalised short-term glucose prediction via recurrent
+self-attention network,'' in \emph{Proc. IEEE CBMS}, 2021, pp. 154--159.
+
+\bibitem{Zhu2020Dilated}
+T. Zhu \emph{et al.}, ``Dilated recurrent neural networks for glucose forecasting
+in type 1 diabetes,'' \emph{J. Healthc. Inform. Res.}, vol. 4, no. 3, pp.\ 308--324, 2020.
+
+\bibitem{QuinoneroCandela2009}
+J. Qui\~{n}onero-Candela \emph{et al.}, Eds., \emph{Dataset Shift in Machine
+Learning}. MIT Press, 2009.
+
+\bibitem{MorenoTorres2012}
+J. G. Moreno-Torres \emph{et al.}, ``A unifying view on dataset shift in
+classification,'' \emph{Pattern Recognit.}, vol. 45, no. 1, pp. 521--530, 2012.
+
+\bibitem{Clarke1987ClinicalAccuracy}
+W. L. Clarke \emph{et al.}, ``Evaluating clinical accuracy of systems for
+self-monitoring of blood glucose,'' \emph{Diabetes Care}, vol. 10, no. 5, pp.
+622--628, 1987.
+
+\bibitem{Parkes2000Consensus}
+J. L. Parkes \emph{et al.}, ``A new consensus error grid\ldots,'' \emph{Diabetes
+Care}, vol. 23, no. 8, pp. 1143--1148, 2000.
+
+\bibitem{Pfutzner2013Parkes}
+A. Pf\"{u}tzner \emph{et al.}, ``Technical aspects of the Parkes error grid,''
+\emph{J. Diabetes Sci. Technol.}, vol. 7, no. 5, pp. 1275--1281, 2013.
+
+\bibitem{Wolff2025}
+M. K. Wolff \emph{et al.}, ``Blood glucose prediction algorithms require
+clinically relevant performance criteria beyond accuracy,'' \emph{Diabetes
+Technol. Ther.}, vol. 27, no. 10, pp. 858--870, 2025.
+
+\bibitem{KOST200831}
+G. J. Kost, N. K. Tran, V. J. Abad, and R. F. Louie, ``Evaluation of
+point-of-care glucose testing accuracy using locally-smoothed median absolute
+difference curves,'' \emph{Clin. Chim. Acta}, vol. 389, no. 1--2, pp. 31--39, 2008.
+
+\end{thebibliography}
+
+\end{document}

@@ -373,6 +373,7 @@ class BasePyTorchBGModel(BaseBGModel):
             grad_clip_norm: Optional[float] = 1.0,
             lr_scheduler_factor: float = 0.5,
             lr_scheduler_patience: int = 1,
+            weight_decay: float = 0.0,
             **kwargs):
         """
         Train the PyTorch model.
@@ -385,6 +386,7 @@ class BasePyTorchBGModel(BaseBGModel):
             grad_clip_norm: Max gradient norm, or ``None`` to disable. 
             lr_scheduler_factor: decay factor.
             lr_scheduler_patience: patience.
+            weight_decay: Adam L2 penalty for this stage.
              
             **kwargs: Additional training parameters
 
@@ -400,7 +402,8 @@ class BasePyTorchBGModel(BaseBGModel):
 
         # A fresh optimizer per stage
         if self.optimizer is None:
-            self.optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
+            self.optimizer = torch.optim.Adam(
+                self.model.parameters(), lr=learning_rate, weight_decay=weight_decay)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             self.optimizer, mode="min",
             factor=lr_scheduler_factor, patience=lr_scheduler_patience,

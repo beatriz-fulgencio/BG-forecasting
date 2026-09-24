@@ -580,6 +580,8 @@ def _run_mode(
                 "validation_loader": validation_loader,
                 "learning_rate": config.training.learning_rate,
                 "early_stopping_patience": config.training.early_stopping_patience,
+                "weight_decay": config.training.weight_decay,
+                "grad_clip_norm": config.training.grad_clip_norm,
             }
             if mode == "transfer" or config.training.regular_schedule == "two_stage":
                 if mode == "transfer" and config.training.transfer_early_stopping_patience is not None:

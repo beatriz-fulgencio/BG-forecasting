@@ -27,7 +27,7 @@ class SensitivityChecks(unittest.TestCase):
         (root/'configs').mkdir()
         (root/'configs/full_gru_30min.yaml').write_text((ROOT/'configs/full_gru_30min.yaml').read_text())
         self.env = dict(REPO_DIR=str(root), BASE_CONFIG=root/'configs/full_gru_30min.yaml',
-                        SEEDS=[41,42,43], DEVICE_CFG='cpu', DRIVE_RESULTS=str(root/'drive'),
+                        SEEDS=[43,44], DEVICE_CFG='cpu', DRIVE_RESULTS=str(root/'drive'),
                         COHORT={'2018':[559,563,570,575,588,591], '2020':[540,544,552,567,584,596]},
                         dst=root/'data', sha=lambda p: 'fixture', NOTEBOOK_CODE_SHA256='fixture')
         with contextlib.redirect_stdout(io.StringIO()):
@@ -47,7 +47,7 @@ class SensitivityChecks(unittest.TestCase):
             (parent/'resolved_config.yaml').write_text(yaml.safe_dump(self.env['EXPECTED_CONFIGS'][name]))
             (parent/'aggregate_metrics.json').write_text('{}')
             for mode in (['regular','transfer'] if j==0 else ['regular']):
-                for seed in [41,42,43]:
+                for seed in self.env['SEEDS']:
                     epochs=[10,25,20][j]
                     history=dict(epochs_completed=epochs,val_losses=[1/(x+1) for x in range(epochs)])
                     if mode=='transfer':
@@ -72,8 +72,12 @@ class SensitivityChecks(unittest.TestCase):
         self.assertIn('wilcoxon_bh_q', t)
         for name, cfg in self.env['EXPECTED_CONFIGS'].items():
             self.assertEqual(cfg['training']['regular_schedule'], 'single_stage')
-            self.assertEqual(cfg['training']['transfer_early_stopping_patience'], 20)
+            self.assertEqual(cfg['training']['transfer_early_stopping_patience'], 5)
             self.assertEqual(cfg['training']['learning_rate'], .0003)
+            self.assertEqual(cfg['training']['weight_decay'], 1e-5)
+            self.assertEqual(cfg['training']['grad_clip_norm'], 1.0)
+            self.assertEqual(cfg['training']['seeds'], [43,44])
+            self.assertTrue(cfg['preprocessing']['include_feature_engineering'])
             self.assertEqual(cfg['training']['finetune_learning_rate'], .00005)
             self.assertEqual(cfg['training']['epochs'], 20 if name.endswith('fixed20') else 200)
         self.assertEqual(len(self.env['epoch_table']),4)
@@ -95,6 +99,16 @@ class SensitivityChecks(unittest.TestCase):
                 frames[pid][mode] = pd.DataFrame(dict(glucose=120+20*np.sin(x/8),
                     basal=np.ones(96), bolus=(x%24==0).astype(float), carbs=(x%24==0)*15.),
                     index=pd.date_range('2020-01-01' if mode=='train' else '2020-02-01', periods=96, freq='5min'))
+                # _run_mode receives frames after feature engineering.
+                hours = frames[pid][mode].index.hour
+                frames[pid][mode]['hour_sin'] = np.sin(2*np.pi*hours/24)
+                frames[pid][mode]['hour_cos'] = np.cos(2*np.pi*hours/24)
+        from unittest.mock import patch
+        original_adam = torch.optim.Adam
+        optimizer_options = []
+        def capture_adam(*args, **kwargs):
+            optimizer_options.append(kwargs.copy())
+            return original_adam(*args, **kwargs)
         histories = []
         for epochs in [2, 4]:
             cfg = copy.deepcopy(self.env['base'])
@@ -105,19 +119,37 @@ class SensitivityChecks(unittest.TestCase):
             cfg['evaluation']['metrics'] = ['mae','rmse']
             path=Path(self.tmp.name)/f'tiny{epochs}.yaml';path.write_text(yaml.safe_dump(cfg))
             folder=Path(self.tmp.name)/f'train{epochs}'
-            with contextlib.redirect_stdout(io.StringIO()):
+            with contextlib.redirect_stdout(io.StringIO()), patch('torch.optim.Adam', capture_adam):
                 configured._run_mode(load_config(path),'regular',41,[559,563],frames,folder)
             histories.append(json.loads((folder/'metrics.json').read_text()))
+        self.assertEqual(len(optimizer_options), 4)
+        self.assertTrue(all(x['weight_decay'] == 1e-5 for x in optimizer_options))
         for pid in ['559','563']:
+            self.assertEqual(histories[0][pid]['model_info']['feature_dim'], 6)
             np.testing.assert_array_equal(histories[0][pid]['training_history']['val_losses'],
                                           histories[1][pid]['training_history']['val_losses'][:2])
 
     def test_missing_patient_rejected(self):
         name=next(iter(self.env['arm_dirs']));parent=self.env['arm_dirs'][name]
-        path=parent/'regular/seed_41/metrics.json'
+        path=parent/'regular/seed_43/metrics.json'
         entries=json.loads(path.read_text());entries.pop(next(iter(entries)));path.write_text(json.dumps(entries))
         self.assertIsNone(self.env['find_arm'](name))
-        with self.assertRaises(ValueError):self.env['checked_metrics'](parent,'regular',41)
+        with self.assertRaises(ValueError):self.env['checked_metrics'](parent,'regular',43)
+
+    def test_transfer_early_stop_accepted_but_invalid_history_rejected(self):
+        name = next(iter(self.env['arm_dirs']))
+        parent = self.env['arm_dirs'][name]
+        path = parent/'transfer/seed_43/metrics.json'
+        entries = json.loads(path.read_text())
+        history = next(iter(entries.values()))['training_history']
+        history['pretrain_history']['epochs_completed'] = 7
+        history['epochs_completed'] = 17
+        path.write_text(json.dumps(entries))
+        self.assertEqual(self.env['find_arm'](name), parent)
+        history['finetune_history']['epochs_completed'] = 11
+        history['epochs_completed'] = 18
+        path.write_text(json.dumps(entries))
+        self.assertIsNone(self.env['find_arm'](name))
 
     def test_stale_config_rejected(self):
         name=next(iter(self.env['arm_dirs']));path=self.env['arm_dirs'][name]/'resolved_config.yaml'
@@ -126,7 +158,7 @@ class SensitivityChecks(unittest.TestCase):
         self.assertIsNone(self.env['find_arm'](name))
 
     def test_unpaired_trajectories_rejected(self):
-        parent=list(self.env['arm_dirs'].values())[1];path=parent/'regular/seed_41/metrics.json'
+        parent=list(self.env['arm_dirs'].values())[1];path=parent/'regular/seed_43/metrics.json'
         entries=json.loads(path.read_text());entries[next(iter(entries))]['training_history']['val_losses'][0]=999
         path.write_text(json.dumps(entries))
         with contextlib.redirect_stdout(io.StringIO()),self.assertRaisesRegex(ValueError,'trajectories not paired'):
