@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from setuptools import setup, find_packages
 
 with open("README.md", "r", encoding="utf-8") as fh:
@@ -6,10 +8,12 @@ with open("README.md", "r", encoding="utf-8") as fh:
 with open("requirements.txt", "r", encoding="utf-8") as fh:
     requirements = [line.strip() for line in fh if line.strip() and not line.startswith("#")]
 
+config_files = sorted(str(path) for path in Path("configs").glob("*.yaml"))
+
 setup(
     name="bg-forecasting-benchmark",
     version="0.1.0",
-    author="Blood Glucose Forecasting Research Group",
+    author="IMScience Lab - Beatriz Fulgencio",
     author_email="beatrizfulgencio03@gmail.com",
     description="A reproducible benchmark framework for blood glucose forecasting models",
     long_description=long_description,
@@ -22,13 +26,12 @@ setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
         "Topic :: Scientific/Engineering :: Medical Science Apps.",
     ],
-    python_requires=">=3.8",
+    python_requires=">=3.9",
     install_requires=requirements,
     extras_require={
         "dev": [
@@ -39,7 +42,10 @@ setup(
         ],
     },
     include_package_data=True,
-    package_data={
-        "benchmark": ["configs/*.yaml"],
+    data_files=[("configs", config_files)],
+    entry_points={
+        "console_scripts": [
+            "bg-forecast=benchmark.cli:main",
+        ],
     },
 )
