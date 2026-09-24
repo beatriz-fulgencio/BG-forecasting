@@ -1,8 +1,7 @@
 """
 Data loaders
 
-This module provides standardized data loading functions for the Ohio T1DM 
-blood glucose datasets commonly used in research. The loaders return
+This module provides standardized data loading functions for the Ohio T1DM blood glucose datasets commonly used in research. The loaders return
 raw combined dataframes without any data alterations.
 
 All data preprocessing and alterations should be done using the 
@@ -19,10 +18,7 @@ import xml.etree.ElementTree as ET
 import pandas as pd # type: ignore
 import numpy as np
 import datetime
-import warnings
 from typing import List, Dict, Optional, Tuple
-
-warnings.simplefilter('ignore', Warning) # Ignore warnings for cleaner output
 
 
 class OhioT1DMDataLoader:
@@ -61,7 +57,7 @@ class OhioT1DMDataLoader:
             '2020': [540, 544, 552, 567, 584, 596]
         }
     
-    def round_minute(self, date_string: str, round2min: int = 5) -> datetime.datetime:
+    def round_minute(self, date_string: str, round2min: int = 5):
         """
         Round datetime to specified minute intervals.
         
@@ -77,7 +73,7 @@ class OhioT1DMDataLoader:
         date = date.replace(minute=int(new_min), second=0)
         return date
     
-    def get_cgm(self, root: ET.Element) -> pd.DataFrame:
+    def get_cgm(self, root: ET.Element):
         """Extract CGM glucose data from XML."""
         glucose = []
         glucose_ts = []
@@ -93,7 +89,7 @@ class OhioT1DMDataLoader:
             'glucose': glucose
         }).set_index('ts')
     
-    def get_fingerstick(self, root: ET.Element) -> pd.DataFrame:
+    def get_fingerstick(self, root: ET.Element):
         """Extract fingerstick glucose data from XML."""
         fingerstick = []
         fingerstick_ts = []
@@ -109,7 +105,7 @@ class OhioT1DMDataLoader:
             'fingerstick': fingerstick
         }).set_index('ts')
     
-    def get_gsr(self, root: ET.Element) -> pd.DataFrame:
+    def get_gsr(self, root: ET.Element):
         """Extract galvanic skin response data from XML."""
         gsr = []
         gsr_ts = []
@@ -125,7 +121,7 @@ class OhioT1DMDataLoader:
             'gsr': gsr
         }).set_index('ts')
     
-    def get_heart_rate(self, root: ET.Element) -> pd.DataFrame:
+    def get_heart_rate(self, root: ET.Element):
         """Extract heart rate data from XML."""
         hr = []
         hr_ts = []
@@ -141,7 +137,7 @@ class OhioT1DMDataLoader:
             'hr': hr
         }).set_index('ts')
     
-    def get_skin_temperature(self, root: ET.Element) -> pd.DataFrame:
+    def get_skin_temperature(self, root: ET.Element):
         """Extract skin temperature data from XML."""
         st = []
         st_ts = []
@@ -157,7 +153,7 @@ class OhioT1DMDataLoader:
             'st': st
         }).set_index('ts')
     
-    def get_basal(self, root: ET.Element) -> pd.DataFrame:
+    def get_basal(self, root: ET.Element):
         """Extract basal insulin data from XML."""
         basal = []
         basal_ts = []
@@ -173,7 +169,7 @@ class OhioT1DMDataLoader:
             'basal': basal
         }).set_index('ts')
     
-    def get_temp_basal(self, root: ET.Element) -> pd.DataFrame:
+    def get_temp_basal(self, root: ET.Element):
         """Extract temporary basal insulin data from XML."""
         temp_basal = []
         temp_basal_ts = []
@@ -197,7 +193,7 @@ class OhioT1DMDataLoader:
             'basal_end': basal_end
         }).set_index('ts')
     
-    def get_bolus(self, root: ET.Element) -> pd.DataFrame:
+    def get_bolus(self, root: ET.Element):
         """Extract bolus insulin data from XML."""
         bolus = []
         bolus_ts = []
@@ -226,7 +222,7 @@ class OhioT1DMDataLoader:
             'bolus_end': bolus_end
         }).set_index('ts')
     
-    def get_meal(self, root: ET.Element) -> pd.DataFrame:
+    def get_meal(self, root: ET.Element):
         """Extract meal/carbohydrate data from XML."""
         carbs = []
         meal_ts = []
@@ -249,7 +245,7 @@ class OhioT1DMDataLoader:
             'meal_type': meal_type
         }).set_index('ts')
     
-    def get_exercise(self, root: ET.Element) -> pd.DataFrame:
+    def get_exercise(self, root: ET.Element):
         """Extract exercise data from XML."""
         exercise_intensity = []
         exercise_ts = []
@@ -272,7 +268,7 @@ class OhioT1DMDataLoader:
             'exer_dur': exercise_dur
         }).set_index('ts')
     
-    def get_sleep(self, root: ET.Element) -> pd.DataFrame:
+    def get_sleep(self, root: ET.Element):
         """Extract sleep data from XML."""
         sleep_quality = []
         sleep_ts = []
@@ -302,7 +298,7 @@ class OhioT1DMDataLoader:
             'sleep_end': sleep_end
         }).set_index('ts')
     
-    def get_work(self, root: ET.Element) -> pd.DataFrame:
+    def get_work(self, root: ET.Element):
         """Extract work stress data from XML."""
         work_intensity = []
         work_ts = []
@@ -331,7 +327,7 @@ class OhioT1DMDataLoader:
             'work_end': work_end
         }).set_index('ts')
 
-    def load_single_file(self, file_path: str) -> pd.DataFrame:
+    def load_single_file(self, file_path: str):
         """
         Load and parse a single XML file from the OhioT1DM dataset.
         
@@ -404,7 +400,7 @@ class OhioT1DMDataLoader:
         
         return merged_df
     
-    def load_patient_data(self, patient_id: int, mode: str = 'train') -> pd.DataFrame:
+    def load_patient_data(self, patient_id: int, mode: str = 'train'):
         """
         Load raw data for a specific patient.
         
@@ -444,12 +440,14 @@ class OhioT1DMDataLoader:
         
         return df
     
-    def load_all_patients(self, mode: str = 'train') -> Dict[int, pd.DataFrame]:
+    def load_all_patients(self, mode: str = 'train', strict: bool = True):
         """
         Load raw data for all patients in the specified version(s).
         
         Args:
             mode: 'train' or 'test'
+            strict: Raise when an expected patient file is missing. Set to
+                false only for exploratory partial-dataset inspection.
             
         Returns:
             Dictionary mapping patient IDs to their raw DataFrames
@@ -466,12 +464,14 @@ class OhioT1DMDataLoader:
                     patient_data[patient_id] = df
                     print(f"Successfully loaded patient {patient_id} from version {version}")
                 except FileNotFoundError as e:
+                    if strict:
+                        raise
                     print(f"Warning: {e}")
                     continue
         
         return patient_data
     
-    def get_available_patients(self, mode: str = 'train') -> List[int]:
+    def get_available_patients(self, mode: str = 'train'):
         """
         Get list of available patient IDs for the specified mode.
         
@@ -508,7 +508,7 @@ def load_ohiot1dm_data(data_dir: str,
                       patient_ids: Optional[List[int]] = None,
                       mode: str = 'train',
                       version: List[str] = ['2018', '2020'],
-                      sampling_rate: int = 5) -> Dict[int, pd.DataFrame]:
+                      sampling_rate: int = 5):
     """
     Convenience function to load raw OhioT1DM dataset.
     
@@ -533,10 +533,6 @@ def load_ohiot1dm_data(data_dir: str,
     else:
         patient_data = {}
         for patient_id in patient_ids:
-            try:
-                df = loader.load_patient_data(patient_id, mode)
-                patient_data[patient_id] = df
-            except FileNotFoundError as e:
-                print(f"Warning: Could not load patient {patient_id}: {e}")
-                continue
+            df = loader.load_patient_data(patient_id, mode)
+            patient_data[patient_id] = df
         return patient_data

@@ -422,7 +422,13 @@ This implementation is based on the excellent work from the **GluPred project**:
 > **GluPred: A Glucose Prediction System using Deep Learning**
 > 
 > Original authors: [Cui, Ran and Hettiarachchi, Chirath and Nolan, Christopher J and Daskalaki, Elena and Suominen, Hanna]
-> 
+>
+> Repository: <https://github.com/r-cui/GluPred> — **MIT licensed**, so its code may
+> be adapted under this project's MIT licence with attribution.
+>
+> Paper: *Personalised Short-Term Glucose Prediction via Recurrent Self-Attention
+> Network*, IEEE CBMS 2021, <https://ieeexplore.ieee.org/document/9474665/>
+>
 > Our implementation adapts their PyTorch dataset design and insulin smoothing algorithms while extending functionality for comprehensive research workflows.
 
 ### Citation

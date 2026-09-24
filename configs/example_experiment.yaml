@@ -1,0 +1,52 @@
+# Small real-data smoke experiment. OhioT1DM must be downloaded separately.
+schema_version: 1
+
+experiment:
+  name: example_gru_two_patients
+  description: Two-patient GRU smoke run using regular training
+  author: Researcher Name
+
+data:
+  dataset: ohiot1dm
+  root: data
+  version: "2020"
+  patients: [540, 544]
+  train_ratio: 0.9
+  validation_ratio: 0.1
+
+preprocessing:
+  window_size: 12
+  prediction_horizon: 6
+  sampling_rate: 5
+  unimodal: true
+  include_feature_engineering: true
+  normalization: standardize
+
+model:
+  type: gru
+  architecture:
+    hidden_size: 32
+    num_layers: 1
+    dropout: 0.0
+    batch_first: true
+
+training:
+  mode: regular
+  epochs: 10
+  pretrain_epochs: 10
+  finetune_epochs: 5
+  batch_size: 32
+  learning_rate: 0.001
+  early_stopping_patience: 5
+  seeds: [42]
+  device: auto
+
+evaluation:
+  metrics: [mae, rmse, mard, tir, clarke_ega, parkes_ega]
+
+output:
+  directory: results/experiments
+  save_model: true
+  save_predictions: true
+  generate_plots: true
+  export_format: [json, csv]
